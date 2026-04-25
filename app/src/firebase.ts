@@ -1,8 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getDatabase } from 'firebase/database';
+import { getAuth } from 'firebase/auth';
 
-// Replace these values with your Firebase project config
-// Get them from: https://console.firebase.google.com → Project Settings → Your apps
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyD85kJXIBij0RmDAszBhvZWRjA-Zg8mISQ",
@@ -17,5 +16,6 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const db = getDatabase(app);
+export const auth = getAuth(app);
 
 

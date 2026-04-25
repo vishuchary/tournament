@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { auth } from './firebase';
 import type { Tournament, Player } from './types';
 import { subscribeTournaments, saveTournament, deleteTournament, subscribePlayers, saveRankings, subscribeRankings } from './store';
 import { computePlayerRankings, type PlayerRanking } from './rankings';
@@ -83,6 +85,11 @@ export default function App() {
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const hasAutoNavigated = useRef(false);
   const hasInitRankings = useRef(false);
+
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, user => setIsAdmin(!!user));
+    return () => unsubscribeAuth();
+  }, []);
 
   useEffect(() => {
     const unsubscribeTournaments = subscribeTournaments((list) => {
@@ -184,7 +191,7 @@ export default function App() {
     <div className="min-h-screen bg-gray-50">
       {showAdminLogin && (
         <AdminLogin
-          onSuccess={() => { setIsAdmin(true); setShowAdminLogin(false); }}
+          onSuccess={() => setShowAdminLogin(false)}
           onCancel={() => setShowAdminLogin(false)}
         />
       )}
@@ -201,7 +208,7 @@ export default function App() {
           <h1 className="text-2xl sm:text-3xl font-bold text-white drop-shadow">🏓 Mountain House TT Club</h1>
           {isAdmin && (
             <button
-              onClick={() => setIsAdmin(false)}
+              onClick={() => signOut(auth)}
               className="text-xs bg-white/20 text-white border border-white/30 px-3 py-1.5 rounded-lg backdrop-blur hover:bg-white/30 transition-colors"
             >
               Admin ✓ · Exit

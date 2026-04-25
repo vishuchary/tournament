@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../firebase';
 
 interface Props {
   onSuccess: () => void;
@@ -6,16 +8,22 @@ interface Props {
 }
 
 export default function AdminLogin({ onSuccess, onCancel }: Props) {
-  const [pin, setPin] = useState('');
-  const [error, setError] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  function submit(value: string) {
-    const target = (import.meta.env.VITE_ADMIN_PIN as string | undefined) || '1234';
-    if (value === target) {
+  async function submit() {
+    if (!email || !password) return;
+    setLoading(true);
+    setError('');
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
       onSuccess();
-    } else {
-      setError(true);
-      setPin('');
+    } catch {
+      setError('Invalid email or password');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -27,28 +35,40 @@ export default function AdminLogin({ onSuccess, onCancel }: Props) {
           <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
         </div>
 
-        <label className="block text-sm font-medium text-gray-700 mb-1">Admin PIN</label>
-        <input
-          autoFocus
-          type="password"
-          inputMode="numeric"
-          maxLength={20}
-          className={`w-full border rounded-xl px-3 py-3 text-lg text-center tracking-widest outline-none transition-colors ${
-            error ? 'border-red-400 focus:border-red-400' : 'border-gray-200 focus:border-blue-400'
-          }`}
-          placeholder="••••"
-          value={pin}
-          onChange={e => { setPin(e.target.value); setError(false); }}
-          onKeyDown={e => e.key === 'Enter' && submit(pin)}
-        />
-        {error && <p className="text-red-500 text-sm mt-1.5 text-center">Incorrect PIN</p>}
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input
+              autoFocus
+              type="email"
+              className="w-full border border-gray-200 rounded-xl px-3 py-3 text-base outline-none focus:border-blue-400 transition-colors"
+              placeholder="admin@example.com"
+              value={email}
+              onChange={e => { setEmail(e.target.value); setError(''); }}
+              onKeyDown={e => e.key === 'Enter' && submit()}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <input
+              type="password"
+              className="w-full border border-gray-200 rounded-xl px-3 py-3 text-base outline-none focus:border-blue-400 transition-colors"
+              placeholder="••••••••"
+              value={password}
+              onChange={e => { setPassword(e.target.value); setError(''); }}
+              onKeyDown={e => e.key === 'Enter' && submit()}
+            />
+          </div>
+        </div>
+
+        {error && <p className="text-red-500 text-sm mt-2 text-center">{error}</p>}
 
         <button
-          onClick={() => submit(pin)}
-          disabled={!pin}
+          onClick={submit}
+          disabled={!email || !password || loading}
           className="w-full mt-4 bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 disabled:opacity-40 transition-colors"
         >
-          Enter Admin Mode
+          {loading ? 'Signing in…' : 'Sign In'}
         </button>
       </div>
     </div>
