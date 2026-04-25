@@ -2,9 +2,10 @@
 
 ## What It Is
 
-A Progressive Web App (PWA) for running table tennis tournaments at Mountain House TT Club. Players can view live scores in real time from any device. Admins create and manage tournaments via a PIN-protected admin mode. Hosted on Vercel, data synced via Firebase Realtime Database.
+A Progressive Web App (PWA) for running table tennis tournaments at Mountain House TT Club. Players can view live scores in real time from any device. Admins create and manage tournaments after signing in via Firebase Authentication. Hosted on Vercel, data synced via Firebase Realtime Database.
 
-**Live URL:** https://tt-scoring.vercel.app
+**Live URL:** https://app-henna-three-21.vercel.app  
+**Repo:** https://github.com/mhttclub/tournament (private)
 
 ---
 
@@ -35,7 +36,7 @@ Key config files:
 - Two sections: **In Progress** (live tournaments) and **History** (completed)
 - Auto-navigates to the active in-progress tournament on first load
 - Completed tournaments show a 🔒 lock icon and "Done" badge
-- **Admin mode**: 🔑 Admin button opens PIN modal; when active, "Admin ✓ · Exit" button shows on banner
+- **Admin mode**: 🔑 Admin button opens Firebase email/password login; when active, "Admin ✓ · Exit" button shows on banner (signs out)
 - **+ New** button only visible in admin mode
 - Rankings and Players buttons always visible
 
@@ -174,8 +175,10 @@ All names editable while tournament is unlocked:
 - Completed tournaments are automatically **locked** (view-only for all users)
 - Lock indicator: 🔒 on tournament cards and in tournament header
 - "Admin Login" link in lock banner inside TournamentView
-- Admin PIN modal (`VITE_ADMIN_PIN` env var, default `1234`)
-- Admin mode is session-only (resets on page refresh — by design)
+- Admin login via Firebase Authentication (email/password); managed in Firebase console → Authentication → Users
+- Admin session persists across page refreshes (Firebase Auth state)
+- Signing out via "Admin ✓ · Exit" button calls Firebase `signOut()`
+- Firebase security rules: `.read: true`, `.write: "auth != null"` — only authenticated admins can write
 - When admin: Delete button visible, names editable, scores enterable, + New button visible
 - Non-admin: read-only for locked tournaments (scores still viewable)
 
@@ -310,7 +313,6 @@ sample-tournaments/
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `VITE_ADMIN_PIN` | Admin login PIN | `1234` |
 | `VITE_PUBLIC_RANKINGS_LIMIT` | Max players shown in rankings for non-admins | `5` |
 
 Set in Vercel: Project → Settings → Environment Variables.
@@ -402,10 +404,15 @@ Create src/App.tsx with:
 ```
 Create src/components/AdminLogin.tsx:
 - Bottom sheet modal (fixed, bottom on mobile, centered on sm+)
-- Password input (type=password, inputMode=numeric)
-- Compare to import.meta.env.VITE_ADMIN_PIN || '1234'
-- Show "Incorrect PIN" on failure, clear input
+- Email + password inputs
+- Call signInWithEmailAndPassword(auth, email, password) from firebase/auth
+- Show "Invalid email or password" on failure
 - Props: onSuccess(), onCancel()
+
+In App.tsx:
+- Import onAuthStateChanged, signOut from firebase/auth
+- Replace isAdmin useState with onAuthStateChanged(auth, user => setIsAdmin(!!user))
+- Replace setIsAdmin(false) in exit button with signOut(auth)
 ```
 
 ---
@@ -593,11 +600,12 @@ Set environment variables in Vercel dashboard (Settings → Environment Variable
 
 Firebase setup:
 1. Create project at console.firebase.google.com
-2. Enable Realtime Database (start in test mode)
-3. Copy firebaseConfig into src/firebase.ts
-4. Set database rules:
-   { "rules": { ".read": true, ".write": true } }
-   (test mode rules expire after 30 days — set permanent rules)
+2. Enable Realtime Database
+3. Enable Authentication → Email/Password sign-in method
+4. Add admin user(s) in Authentication → Users
+5. Copy firebaseConfig into src/firebase.ts (init both db and auth)
+6. Set database rules:
+   { "rules": { ".read": true, ".write": "auth != null" } }
 
 PWA install on iPhone:
 - Open app URL in Safari → Share → Add to Home Screen
@@ -664,6 +672,6 @@ All players stored in Firebase at `/players/{id}` with fields: name, age, sex, h
 
 4. **Firebase test mode expiry**: Expires after 30 days. Set permanent rules in the Firebase console.
 
-5. **Admin mode is session-only**: Refreshing the page logs out of admin mode (React state, not localStorage — by design).
+5. **Admin session persists**: Firebase Auth state is persisted across refreshes. Use `signOut(auth)` to log out explicitly.
 
 6. **Point differential tiebreaker**: When two teams are tied on game wins in a match, total point differential determines the winner. This applies in both `computeStandings` and `computePlayerRankings` — both must be consistent.

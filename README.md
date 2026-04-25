@@ -1,8 +1,9 @@
 # Mountain House TT Club — Scoring App
 
-A real-time table tennis tournament scoring PWA for Mountain House TT Club. Players view live scores from any device. Admins create and manage tournaments via a PIN-protected admin mode.
+A real-time table tennis tournament scoring PWA for Mountain House TT Club. Players view live scores from any device. Admins create and manage tournaments via Firebase Authentication.
 
-**Live app:** https://tt-scoring.vercel.app
+**Live app:** https://app-henna-three-21.vercel.app  
+**Repo:** https://github.com/mhttclub/tournament (private)
 
 ---
 
@@ -27,7 +28,7 @@ All connected clients update instantly
 |------|---------|
 | `src/App.tsx` | Root — view routing, Firebase subscriptions, admin state |
 | `src/types.ts` | TypeScript data model: Tournament, TournamentLevel, Group, Team, Match, Game, Player |
-| `src/firebase.ts` | Firebase app init — exports `db` |
+| `src/firebase.ts` | Firebase app init — exports `db` and `auth` |
 | `src/store.ts` | Firebase CRUD + `toArray()` normaliser for Firebase array serialisation |
 | `src/rankings.ts` | Pure logic — `generateMatches`, `computeStandings`, `computePlayerRankings` |
 | `src/components/TournamentSetup.tsx` | 3-step creation wizard: meta (+ mode) → select players → configure groups (random or custom) |
@@ -38,7 +39,7 @@ All connected clients update instantly
 | `src/components/PlayerPicker.tsx` | Player selection modal with used-name exclusion |
 | `src/components/PlayersScreen.tsx` | Player profile management (add/edit/delete) |
 | `src/components/RankingsScreen.tsx` | IPL-style player leaderboard |
-| `src/components/AdminLogin.tsx` | PIN entry modal |
+| `src/components/AdminLogin.tsx` | Firebase email/password login modal |
 | `scripts/seed-test-tournament.js` | Seeds a 3-level doubles test tournament (18 players, random results) |
 | `scripts/seed-tournaments-2026.js` | Seeds 3 completed 2026 tournaments (20 players: singles + doubles) |
 | `scripts/recompute-rankings.js` | Reads all tournaments from Firebase and rewrites `/rankings` |
@@ -142,18 +143,20 @@ cd app
 vercel --prod --yes
 ```
 
-**Firebase project:** `tt-scoring-60039`
-Database URL: `https://tt-scoring-60039-default-rtdb.firebaseio.com`
+**Firebase project:** `mhtt-tournament`  
+Database URL: `https://mhtt-tournament-default-rtdb.firebaseio.com`
 
 Firebase rules (set in Firebase console → Realtime Database → Rules):
 ```json
 {
   "rules": {
     ".read": true,
-    ".write": true
+    ".write": "auth != null"
   }
 }
 ```
+
+Admin users are managed in Firebase console → Authentication → Users.
 
 ---
 
@@ -161,7 +164,6 @@ Firebase rules (set in Firebase console → Realtime Database → Rules):
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `VITE_ADMIN_PIN` | Admin login PIN | `1234` |
 | `VITE_PUBLIC_RANKINGS_LIMIT` | Max players shown in rankings for non-admins | `5` |
 
 Set in Vercel: Project → Settings → Environment Variables.  
