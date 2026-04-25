@@ -3,7 +3,6 @@ export type MatchFormat = 'sets' | 'games';
 export interface Player {
   id: string;
   name: string;
-  age?: number;
   sex?: 'male' | 'female';
   hand?: 'right' | 'left';
   place?: string;

@@ -16,20 +16,18 @@ const DEFAULT_PLACE = 'Mountain House';
 
 type PlayerDraft = {
   name: string;
-  age: string;
   sex: 'male' | 'female' | '';
   hand: 'right' | 'left' | '';
   place: string;
 };
 
 function emptyDraft(): PlayerDraft {
-  return { name: '', age: '', sex: 'male', hand: 'right', place: DEFAULT_PLACE };
+  return { name: '', sex: 'male', hand: 'right', place: DEFAULT_PLACE };
 }
 
 function playerToDraft(p: Player): PlayerDraft {
   return {
     name: p.name,
-    age: p.age !== undefined ? String(p.age) : '',
     sex: p.sex ?? '',
     hand: p.hand ?? '',
     place: p.place ?? DEFAULT_PLACE,
@@ -38,7 +36,6 @@ function playerToDraft(p: Player): PlayerDraft {
 
 function draftToPlayer(id: string, d: PlayerDraft): Player {
   const p: Player = { id, name: d.name.trim() || 'Player' };
-  if (d.age) p.age = parseInt(d.age);
   if (d.sex) p.sex = d.sex;
   if (d.hand) p.hand = d.hand;
   if (d.place.trim()) p.place = d.place.trim();
@@ -110,29 +107,14 @@ function PlayerForm({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Age</label>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={120}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-400"
-                placeholder="–"
-                value={draft.age}
-                onChange={e => set('age', e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Place</label>
-              <input
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-400"
-                placeholder={DEFAULT_PLACE}
-                value={draft.place}
-                onChange={e => set('place', e.target.value)}
-              />
-            </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Place</label>
+            <input
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-400"
+              placeholder={DEFAULT_PLACE}
+              value={draft.place}
+              onChange={e => set('place', e.target.value)}
+            />
           </div>
 
           <div>
@@ -176,8 +158,7 @@ function PlayerForm({
 
 function playerSummary(p: Player): string {
   const parts: string[] = [];
-  if (p.age) parts.push(`Age ${p.age}`);
-  if (p.sex) parts.push(p.sex.charAt(0).toUpperCase() + p.sex.slice(1));
+if (p.sex) parts.push(p.sex.charAt(0).toUpperCase() + p.sex.slice(1));
   if (p.hand) parts.push(p.hand === 'right' ? 'Right-handed' : 'Left-handed');
   if (p.place) parts.push(p.place);
   return parts.join(' · ');
