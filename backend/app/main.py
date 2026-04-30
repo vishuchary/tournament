@@ -6,7 +6,8 @@ import os
 
 app = FastAPI(title='MHTT Tournament API', version='1.0.0')
 
-allowed_origins = os.getenv('ALLOWED_ORIGINS', 'https://mhttclub.hublabs.us').split(',')
+_default_origins = 'https://mhttclub.hublabs.us,https://mhtt-tournament-a3e15.web.app,http://localhost:5173'
+allowed_origins = os.getenv('ALLOWED_ORIGINS', _default_origins).split(',')
 
 app.add_middleware(
     CORSMiddleware,
