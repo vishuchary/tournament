@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import type { Player, BaselineGame, BaselineRanking } from '../types';
+import type { Player, BaselineGame, BaselineRanking, Game } from '../types';
 import { saveBaselineGame, deleteBaselineGame } from '../store';
 
 function nanoid() {
@@ -8,6 +8,26 @@ function nanoid() {
 
 function today() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function gameWinner(s1: number, s2: number): 1 | 2 | null {
+  if (s1 >= 11 && s1 - s2 >= 2) return 1;
+  if (s2 >= 11 && s2 - s1 >= 2) return 2;
+  return null;
+}
+
+function matchWinner(games: Game[], setCount: number): 1 | 2 | null {
+  let t1 = 0, t2 = 0;
+  for (const g of games) {
+    const w = gameWinner(g.team1Score, g.team2Score);
+    if (w === 1) t1++;
+    else if (w === 2) t2++;
+  }
+  const needed = Math.ceil(setCount / 2);
+  if (t1 >= needed) return 1;
+  if (t2 >= needed) return 2;
+  if (games.length >= setCount && t1 !== t2) return t1 > t2 ? 1 : 2;
+  return null;
 }
 
 function computeBaselineRankings(games: BaselineGame[], type: 'singles' | 'doubles'): BaselineRanking[] {
@@ -39,11 +59,7 @@ interface Props {
 }
 
 function PlayerPicker({ label, selected, players, exclude, onChange }: {
-  label: string;
-  selected: string;
-  players: Player[];
-  exclude: string[];
-  onChange: (v: string) => void;
+  label: string; selected: string; players: Player[]; exclude: string[]; onChange: (v: string) => void;
 }) {
   return (
     <div className="flex-1">
@@ -62,9 +78,74 @@ function PlayerPicker({ label, selected, players, exclude, onChange }: {
   );
 }
 
+function ScoreEntry({ games, setCount, team1Label, team2Label, onChange }: {
+  games: Game[]; setCount: number; team1Label: string; team2Label: string;
+  onChange: (games: Game[]) => void;
+}) {
+  const winsNeeded = Math.ceil(setCount / 2);
+
+  function isActive(idx: number): boolean {
+    let t1 = 0, t2 = 0;
+    for (let j = 0; j < idx; j++) {
+      const w = gameWinner(games[j].team1Score, games[j].team2Score);
+      if (w === 1) t1++; else if (w === 2) t2++;
+    }
+    return t1 < winsNeeded && t2 < winsNeeded;
+  }
+
+  function setScore(idx: number, side: 'team1Score' | 'team2Score', val: string) {
+    const n = Math.max(0, parseInt(val) || 0);
+    onChange(games.map((g, i) => i !== idx ? g : { ...g, [side]: n }));
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-2 text-xs font-semibold text-gray-500 text-center">
+        <div className="truncate">{team1Label}</div>
+        <div />
+        <div className="truncate">{team2Label}</div>
+      </div>
+      {games.map((g, i) => {
+        const active = isActive(i);
+        const gw = active ? gameWinner(g.team1Score, g.team2Score) : null;
+        return (
+          <div key={i} className={`grid grid-cols-3 gap-3 items-center transition-opacity ${!active ? 'opacity-30' : ''}`}>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              disabled={!active}
+              className={`text-center border-2 rounded-xl py-3 text-2xl font-bold outline-none transition-colors w-full ${
+                gw === 1 ? 'border-green-400 bg-green-50 text-green-700' : 'border-gray-200 focus:border-blue-400'
+              }`}
+              value={g.team1Score}
+              onFocus={e => e.target.select()}
+              onChange={e => setScore(i, 'team1Score', e.target.value)}
+            />
+            <div className="text-center text-gray-400 text-xs font-medium">Game {i + 1}</div>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              disabled={!active}
+              className={`text-center border-2 rounded-xl py-3 text-2xl font-bold outline-none transition-colors w-full ${
+                gw === 2 ? 'border-green-400 bg-green-50 text-green-700' : 'border-gray-200 focus:border-blue-400'
+              }`}
+              value={g.team2Score}
+              onFocus={e => e.target.select()}
+              onChange={e => setScore(i, 'team2Score', e.target.value)}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function RankingsTab({ games, type }: { games: BaselineGame[]; type: 'singles' | 'doubles' }) {
   const rankings = computeBaselineRankings(games, type);
   const maxPts = rankings[0]?.points ?? 1;
+  const MEDAL: Record<number, string> = { 1: '👑', 2: '🥈', 3: '🥉' };
 
   if (rankings.length === 0) {
     return (
@@ -75,8 +156,6 @@ function RankingsTab({ games, type }: { games: BaselineGame[]; type: 'singles' |
     );
   }
 
-  const MEDAL: Record<number, string> = { 1: '👑', 2: '🥈', 3: '🥉' };
-
   return (
     <div className="space-y-2">
       {rankings.map((r, i) => {
@@ -84,7 +163,6 @@ function RankingsTab({ games, type }: { games: BaselineGame[]; type: 'singles' |
         const pct = maxPts > 0 ? Math.max(4, (r.points / maxPts) * 100) : 0;
         const winRate = r.played > 0 ? Math.round((r.wins / r.played) * 100) : 0;
         const isPodium = rank <= 3;
-
         return (
           <div
             key={r.name}
@@ -96,17 +174,13 @@ function RankingsTab({ games, type }: { games: BaselineGame[]; type: 'singles' |
                 : 'border-gray-200 bg-white'
             }`}
           >
-            <span className="text-sm font-bold text-gray-400 w-6 shrink-0 text-center">
-              {MEDAL[rank] ?? rank}
-            </span>
+            <span className="text-sm font-bold text-gray-400 w-6 shrink-0 text-center">{MEDAL[rank] ?? rank}</span>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
                 <p className="font-semibold text-gray-900 text-sm truncate">{r.name}</p>
                 <span className="font-bold text-sm shrink-0 text-gray-800">{r.points} pts</span>
               </div>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-xs text-gray-400">{r.wins}W · {r.losses}L · {winRate}% win rate</span>
-              </div>
+              <span className="text-xs text-gray-400">{r.wins}W · {r.losses}L · {winRate}% win rate</span>
               <div className="mt-1.5 h-1 bg-gray-100 rounded-full overflow-hidden">
                 <div className="h-full bg-blue-400 rounded-full" style={{ width: `${pct}%` }} />
               </div>
@@ -123,32 +197,42 @@ export default function BaselineScreen({ games, players, isAdmin, onBack }: Prop
   const [tab, setTab] = useState<Tab>('matches');
   const [showForm, setShowForm] = useState(false);
   const [matchType, setMatchType] = useState<'singles' | 'doubles'>('singles');
+  const [setCount, setSetCount] = useState(3);
   const [t1p1, setT1p1] = useState('');
   const [t1p2, setT1p2] = useState('');
   const [t2p1, setT2p1] = useState('');
   const [t2p2, setT2p2] = useState('');
-  const [winner, setWinner] = useState<1 | 2 | null>(null);
+  const [scoreGames, setScoreGames] = useState<Game[]>([]);
   const [saving, setSaving] = useState(false);
 
   const team1 = matchType === 'singles' ? [t1p1].filter(Boolean) : [t1p1, t1p2].filter(Boolean);
   const team2 = matchType === 'singles' ? [t2p1].filter(Boolean) : [t2p1, t2p2].filter(Boolean);
   const needed = matchType === 'singles' ? 1 : 2;
-  const formValid = team1.length === needed && team2.length === needed && winner !== null;
+  const playersReady = team1.length === needed && team2.length === needed;
+
+  // Re-initialize score rows when setCount changes
+  function initGames(count: number) {
+    setScoreGames(Array.from({ length: count }, () => ({ team1Score: 0, team2Score: 0 })));
+  }
+
+  const winner = playersReady && scoreGames.length > 0 ? matchWinner(scoreGames, setCount) : null;
+  const formValid = playersReady && winner !== null;
 
   function resetForm() {
-    setT1p1(''); setT1p2(''); setT2p1(''); setT2p2(''); setWinner(null);
-    setShowForm(false);
+    setT1p1(''); setT1p2(''); setT2p1(''); setT2p2('');
+    setScoreGames([]); setShowForm(false);
   }
 
   async function handleSave() {
-    if (!formValid) return;
+    if (!formValid || winner === null) return;
     setSaving(true);
     const game: BaselineGame = {
       id: nanoid(),
       type: matchType,
-      team1,
-      team2,
-      winner: winner!,
+      team1, team2,
+      games: scoreGames,
+      winner,
+      setCount,
       date: today(),
       createdAt: Date.now(),
     };
@@ -170,6 +254,9 @@ export default function BaselineScreen({ games, players, isAdmin, onBack }: Prop
     { id: 'doubles', label: 'Doubles' },
   ];
 
+  const team1Label = team1.length > 0 ? team1.join(' & ') : 'Team 1';
+  const team2Label = team2.length > 0 ? team2.join(' & ') : 'Team 2';
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-xl mx-auto p-4">
@@ -179,7 +266,7 @@ export default function BaselineScreen({ games, players, isAdmin, onBack }: Prop
           <h1 className="text-xl font-bold text-gray-900">Baseline Games</h1>
           {isAdmin && (
             <button
-              onClick={() => setShowForm(v => !v)}
+              onClick={() => { setShowForm(v => !v); if (!showForm) initGames(setCount); }}
               className="ml-auto bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors"
             >
               {showForm ? 'Cancel' : '+ Add Match'}
@@ -190,22 +277,28 @@ export default function BaselineScreen({ games, players, isAdmin, onBack }: Prop
         {/* Quick entry form */}
         {showForm && isAdmin && (
           <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-5 space-y-4">
-            {/* Type toggle */}
+
+            {/* Type + games count */}
             <div className="flex gap-2">
               {(['singles', 'doubles'] as const).map(t => (
-                <button
-                  key={t}
-                  onClick={() => { setMatchType(t); setT1p2(''); setT2p2(''); }}
-                  className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${
-                    matchType === t ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
+                <button key={t} onClick={() => { setMatchType(t); setT1p2(''); setT2p2(''); }}
+                  className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${matchType === t ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                   {t.charAt(0).toUpperCase() + t.slice(1)}
                 </button>
               ))}
+              <select
+                value={setCount}
+                onChange={e => { const v = Number(e.target.value); setSetCount(v); initGames(v); }}
+                className="border border-gray-200 rounded-lg px-2 py-2 text-sm bg-white focus:outline-none"
+              >
+                <option value={1}>1 game</option>
+                <option value={2}>2 games</option>
+                <option value={3}>Best of 3</option>
+                <option value={5}>Best of 5</option>
+              </select>
             </div>
 
-            {/* Team pickers */}
+            {/* Player pickers */}
             <div className="space-y-3">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Team 1</p>
               <div className="flex gap-2">
@@ -214,7 +307,6 @@ export default function BaselineScreen({ games, players, isAdmin, onBack }: Prop
                   <PlayerPicker label="Player 2" selected={t1p2} players={players} exclude={[t1p1, t2p1, t2p2].filter(Boolean)} onChange={setT1p2} />
                 )}
               </div>
-
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Team 2</p>
               <div className="flex gap-2">
                 <PlayerPicker label="Player 1" selected={t2p1} players={players} exclude={[t1p1, t1p2, t2p2].filter(Boolean)} onChange={setT2p1} />
@@ -224,28 +316,22 @@ export default function BaselineScreen({ games, players, isAdmin, onBack }: Prop
               </div>
             </div>
 
-            {/* Winner picker */}
-            {team1.length === needed && team2.length === needed && (
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Winner</p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setWinner(1)}
-                    className={`flex-1 py-2.5 text-sm font-medium rounded-xl border-2 transition-colors ${
-                      winner === 1 ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                    }`}
-                  >
-                    {team1.join(' & ')} 🏆
-                  </button>
-                  <button
-                    onClick={() => setWinner(2)}
-                    className={`flex-1 py-2.5 text-sm font-medium rounded-xl border-2 transition-colors ${
-                      winner === 2 ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                    }`}
-                  >
-                    {team2.join(' & ')} 🏆
-                  </button>
-                </div>
+            {/* Score entry — only shown when players are picked */}
+            {playersReady && scoreGames.length > 0 && (
+              <div className="space-y-3 pt-1">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Scores</p>
+                <ScoreEntry
+                  games={scoreGames}
+                  setCount={setCount}
+                  team1Label={team1Label}
+                  team2Label={team2Label}
+                  onChange={setScoreGames}
+                />
+                {winner !== null && (
+                  <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-2.5 text-center text-green-700 text-sm font-semibold">
+                    🏆 {winner === 1 ? team1Label : team2Label} wins
+                  </div>
+                )}
               </div>
             )}
 
@@ -262,13 +348,8 @@ export default function BaselineScreen({ games, players, isAdmin, onBack }: Prop
         {/* Tabs */}
         <div className="flex gap-1 bg-gray-100 p-1 rounded-lg mb-5">
           {tabs.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                tab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-colors ${tab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
               {t.label}
             </button>
           ))}
@@ -286,27 +367,32 @@ export default function BaselineScreen({ games, players, isAdmin, onBack }: Prop
             ) : sortedGames.map(g => {
               const winnerTeam = g.winner === 1 ? g.team1 : g.team2;
               const loserTeam  = g.winner === 1 ? g.team2 : g.team1;
+              const t1wins = g.games?.filter(x => gameWinner(x.team1Score, x.team2Score) === 1).length ?? 0;
+              const t2wins = g.games?.filter(x => gameWinner(x.team1Score, x.team2Score) === 2).length ?? 0;
+              const scoreStr = g.winner === 1 ? `${t1wins}-${t2wins}` : `${t2wins}-${t1wins}`;
               return (
-                <div key={g.id} className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-semibold text-gray-900">{winnerTeam.join(' & ')}</span>
-                      <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">Won</span>
-                      <span className="text-sm text-gray-400">vs</span>
-                      <span className="text-sm text-gray-600">{loserTeam.join(' & ')}</span>
+                <div key={g.id} className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-semibold text-gray-900">{winnerTeam.join(' & ')}</span>
+                        <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">Won {scoreStr}</span>
+                        <span className="text-sm text-gray-400">vs</span>
+                        <span className="text-sm text-gray-600">{loserTeam.join(' & ')}</span>
+                      </div>
+                      {g.games && g.games.length > 0 && (
+                        <p className="text-xs text-gray-400 mt-1">
+                          {g.games.map(x => `${x.team1Score}-${x.team2Score}`).join(', ')}
+                        </p>
+                      )}
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {g.type} · {new Date(g.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </p>
                     </div>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {g.type} · {new Date(g.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                    </p>
+                    {isAdmin && (
+                      <button onClick={() => handleDelete(g.id)} className="text-gray-300 hover:text-red-400 text-lg shrink-0 transition-colors">×</button>
+                    )}
                   </div>
-                  {isAdmin && (
-                    <button
-                      onClick={() => handleDelete(g.id)}
-                      className="text-gray-300 hover:text-red-400 text-lg shrink-0 transition-colors"
-                    >
-                      ×
-                    </button>
-                  )}
                 </div>
               );
             })}

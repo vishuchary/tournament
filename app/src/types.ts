@@ -58,7 +58,9 @@ export interface BaselineGame {
   type: 'singles' | 'doubles';
   team1: string[];   // player name(s)
   team2: string[];   // player name(s)
+  games: Game[];     // per-game scores
   winner: 1 | 2;
+  setCount: number;  // number of games played (e.g. 3 = best of 3)
   date: string;      // YYYY-MM-DD
   createdAt: number;
 }
