@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import type { Player, BaselineGame, Game } from '../types';
 import { saveBaselineGame, deleteBaselineGame } from '../store';
-import { computeRCRatings } from '../rankings';
+import { computeRCRatings, computeGlicko2Ratings } from '../rankings';
 
 function nanoid() {
   return Math.random().toString(36).slice(2, 10);
@@ -33,6 +33,7 @@ function matchWinner(games: Game[], setCount: number): 1 | 2 | null {
 
 
 type Tab = 'matches' | 'singles' | 'doubles';
+type RatingAlgo = 'rc' | 'glicko2';
 
 interface Props {
   games: BaselineGame[];
@@ -125,17 +126,20 @@ function ScoreEntry({ games, setCount, team1Label, team2Label, onChange }: {
   );
 }
 
-// SD thresholds for confidence display
-function sdLabel(sd: number): { text: string; color: string } {
-  if (sd < 80)  return { text: 'Established', color: 'text-green-600 bg-green-50' };
-  if (sd < 150) return { text: 'Provisional', color: 'text-yellow-600 bg-yellow-50' };
+function confidenceLabel(uncertainty: number): { text: string; color: string } {
+  if (uncertainty < 80)  return { text: 'Established', color: 'text-green-600 bg-green-50' };
+  if (uncertainty < 150) return { text: 'Provisional', color: 'text-yellow-600 bg-yellow-50' };
   return { text: 'Unrated', color: 'text-gray-400 bg-gray-100' };
 }
 
-function RatingsTab({ games, type }: { games: BaselineGame[]; type: 'singles' | 'doubles' }) {
-  const ratings = useMemo(() => computeRCRatings(games, type), [games, type]);
+function RatingsTab({ games, type, algo }: { games: BaselineGame[]; type: 'singles' | 'doubles'; algo: RatingAlgo }) {
+  const ratings = useMemo(
+    () => algo === 'rc' ? computeRCRatings(games, type) : computeGlicko2Ratings(games, type),
+    [games, type, algo],
+  );
   const MEDAL: Record<number, string> = { 1: '👑', 2: '🥈', 3: '🥉' };
   const maxRating = ratings[0]?.rating ?? 1400;
+  const minBase = algo === 'rc' ? 1000 : 1200;
 
   if (ratings.length === 0) {
     return (
@@ -151,9 +155,10 @@ function RatingsTab({ games, type }: { games: BaselineGame[]; type: 'singles' | 
       {ratings.map((r, i) => {
         const rank = i + 1;
         const isPodium = rank <= 3;
-        const confidence = sdLabel(r.sd);
+        const confidence = confidenceLabel(r.uncertainty);
         const winRate = r.gamesPlayed > 0 ? Math.round((r.won / r.gamesPlayed) * 100) : 0;
-        const pct = Math.max(10, ((r.rating - 1000) / (maxRating - 1000 || 1)) * 100);
+        const pct = Math.max(10, ((r.rating - minBase) / (maxRating - minBase || 1)) * 100);
+        const uncertLabel = algo === 'rc' ? '±SD' : '±RD';
         return (
           <div
             key={r.name}
@@ -171,22 +176,25 @@ function RatingsTab({ games, type }: { games: BaselineGame[]; type: 'singles' | 
                 <p className="font-semibold text-gray-900 text-sm truncate">{r.name}</p>
                 <div className="text-right shrink-0">
                   <span className="font-bold text-lg text-gray-900">{Math.round(r.rating)}</span>
-                  <span className="text-xs text-gray-400 ml-1">±{Math.round(r.sd)}</span>
+                  <span className="text-xs text-gray-400 ml-1">{uncertLabel} {Math.round(r.uncertainty)}</span>
                 </div>
               </div>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${confidence.color}`}>{confidence.text}</span>
                 <span className="text-xs text-gray-400">{r.won}W · {r.lost}L · {winRate}%</span>
+                {algo === 'glicko2' && r.volatility !== undefined && (
+                  <span className="text-xs text-gray-400">σ {r.volatility.toFixed(3)}</span>
+                )}
               </div>
               <div className="mt-1.5 h-1 bg-gray-100 rounded-full overflow-hidden">
-                <div className={`h-full rounded-full ${r.sd > 150 ? 'bg-gray-300' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
+                <div className={`h-full rounded-full ${r.uncertainty > 150 ? 'bg-gray-300' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
               </div>
             </div>
           </div>
         );
       })}
       <p className="text-xs text-center text-gray-400 pt-2">
-        Ratings Central algorithm · ±SD = uncertainty · Established &lt; ±80
+        {algo === 'rc' ? 'Ratings Central · ±SD = uncertainty' : 'Glicko-2 · ±RD = uncertainty · σ = volatility'} · Established &lt; ±80
       </p>
     </div>
   );
@@ -194,6 +202,7 @@ function RatingsTab({ games, type }: { games: BaselineGame[]; type: 'singles' | 
 
 export default function BaselineScreen({ games, players, isAdmin, onBack }: Props) {
   const [tab, setTab] = useState<Tab>('matches');
+  const [algo, setAlgo] = useState<RatingAlgo>('rc');
   const [showForm, setShowForm] = useState(false);
   const [matchType, setMatchType] = useState<'singles' | 'doubles'>('singles');
   const [setCount, setSetCount] = useState(3);
@@ -398,8 +407,25 @@ export default function BaselineScreen({ games, players, isAdmin, onBack }: Prop
           </div>
         )}
 
-        {tab === 'singles' && <RatingsTab games={games} type="singles" />}
-        {tab === 'doubles' && <RatingsTab games={games} type="doubles" />}
+        {(tab === 'singles' || tab === 'doubles') && (
+          <div className="flex gap-1 bg-gray-100 p-1 rounded-lg mb-4">
+            <button
+              onClick={() => setAlgo('rc')}
+              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${algo === 'rc' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Ratings Central
+            </button>
+            <button
+              onClick={() => setAlgo('glicko2')}
+              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${algo === 'glicko2' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Glicko-2
+            </button>
+          </div>
+        )}
+
+        {tab === 'singles' && <RatingsTab games={games} type="singles" algo={algo} />}
+        {tab === 'doubles' && <RatingsTab games={games} type="doubles" algo={algo} />}
       </div>
     </div>
   );

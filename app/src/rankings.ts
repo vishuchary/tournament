@@ -352,102 +352,208 @@ const RC_INITIAL_RATING = 1400;
 const RC_INITIAL_SD = 450;
 const RC_MIN_SD = 50;
 
-export interface RCRating {
+// Shared output type for both rating algorithms
+export interface PlayerRatingEntry {
   name: string;
-  rating: number;
-  sd: number;        // standard deviation — lower = more certain
+  rating: number;       // display-scale rating
+  uncertainty: number;  // SD (RC) or RD (Glicko-2) — lower = more certain
+  volatility?: number;  // Glicko-2 σ only
   won: number;
   lost: number;
   gamesPlayed: number;
 }
 
-// Glicko-style attenuation of opponent SD
+// Keep RCRating as alias for back-compat
+export type RCRating = PlayerRatingEntry;
+
+// Glicko-style attenuation of opponent uncertainty
 function rcG(sd: number): number {
   return 1 / Math.sqrt(1 + 3 * RC_ALPHA * RC_ALPHA * sd * sd / (Math.PI * Math.PI));
 }
 
-// Expected score for player with rating r vs opponent (rOpp, sdOpp)
 function rcE(r: number, rOpp: number, sdOpp: number): number {
   return 1 / (1 + Math.exp(-rcG(sdOpp) * RC_ALPHA * (r - rOpp)));
 }
 
-// Bayesian update: apply a batch of results to a player
 function rcUpdate(
-  rating: number,
-  sd: number,
-  results: { rOpp: number; sdOpp: number; score: number }[], // score: 1=win, 0=loss
-): { rating: number; sd: number } {
-  if (results.length === 0) return { rating, sd };
-
+  rating: number, sd: number,
+  results: { rOpp: number; sdOpp: number; score: number }[],
+): { rating: number; uncertainty: number } {
+  if (results.length === 0) return { rating, uncertainty: sd };
   const dSqInv = RC_ALPHA * RC_ALPHA * results.reduce((s, r) => {
-    const g = rcG(r.sdOpp);
-    const e = rcE(rating, r.rOpp, r.sdOpp);
+    const g = rcG(r.sdOpp); const e = rcE(rating, r.rOpp, r.sdOpp);
     return s + g * g * e * (1 - e);
   }, 0);
-
   const dSq = 1 / dSqInv;
-  const delta = RC_ALPHA * dSq * results.reduce((s, r) => {
-    return s + rcG(r.sdOpp) * (r.score - rcE(rating, r.rOpp, r.sdOpp));
-  }, 0);
-
-  const newRating = rating + delta;
-  const newSd = Math.max(Math.sqrt(1 / (1 / (sd * sd) + 1 / dSq)), RC_MIN_SD);
-  return { rating: newRating, sd: newSd };
+  const delta = RC_ALPHA * dSq * results.reduce((s, r) =>
+    s + rcG(r.sdOpp) * (r.score - rcE(rating, r.rOpp, r.sdOpp)), 0);
+  return {
+    rating: rating + delta,
+    uncertainty: Math.max(Math.sqrt(1 / (1 / (sd * sd) + 1 / dSq)), RC_MIN_SD),
+  };
 }
 
-export function computeRCRatings(games: BaselineGame[], type: 'singles' | 'doubles'): RCRating[] {
-  const map = new Map<string, RCRating>();
+function applyRCGame(
+  map: Map<string, PlayerRatingEntry>,
+  game: BaselineGame,
+): void {
+  const team1Won = game.winner === 1;
+  const isDoubles = game.type === 'doubles';
 
-  function get(name: string): RCRating {
-    if (!map.has(name)) map.set(name, {
-      name, rating: RC_INITIAL_RATING, sd: RC_INITIAL_SD,
-      won: 0, lost: 0, gamesPlayed: 0,
-    });
+  function get(name: string): PlayerRatingEntry {
+    if (!map.has(name)) map.set(name, { name, rating: RC_INITIAL_RATING, uncertainty: RC_INITIAL_SD, won: 0, lost: 0, gamesPlayed: 0 });
     return map.get(name)!;
   }
 
-  const sorted = [...games]
-    .filter(g => g.type === type)
-    .sort((a, b) => a.createdAt - b.createdAt);
+  const pre = new Map<string, PlayerRatingEntry>();
+  [...game.team1, ...game.team2].forEach(n => pre.set(n, { ...get(n) }));
 
-  for (const game of sorted) {
-    const team1Won = game.winner === 1;
+  const update = (name: string, opponents: string[], won: boolean) => {
+    const p = pre.get(name)!;
+    const results = opponents.map(opp => {
+      const o = pre.get(opp)!;
+      return { rOpp: o.rating, sdOpp: o.uncertainty, score: won ? 1 : 0 };
+    });
+    const u = rcUpdate(p.rating, p.uncertainty, results);
+    const cur = get(name);
+    map.set(name, { ...cur, ...u, won: cur.won + (won ? 1 : 0), lost: cur.lost + (won ? 0 : 1), gamesPlayed: cur.gamesPlayed + 1 });
+  };
 
-    if (type === 'singles') {
-      const p1 = get(game.team1[0]);
-      const p2 = get(game.team2[0]);
-      // Use pre-game ratings for both updates (simultaneous)
-      const u1 = rcUpdate(p1.rating, p1.sd, [{ rOpp: p2.rating, sdOpp: p2.sd, score: team1Won ? 1 : 0 }]);
-      const u2 = rcUpdate(p2.rating, p2.sd, [{ rOpp: p1.rating, sdOpp: p1.sd, score: team1Won ? 0 : 1 }]);
-      map.set(game.team1[0], { ...p1, ...u1, won: p1.won + (team1Won ? 1 : 0), lost: p1.lost + (team1Won ? 0 : 1), gamesPlayed: p1.gamesPlayed + 1 });
-      map.set(game.team2[0], { ...p2, ...u2, won: p2.won + (team1Won ? 0 : 1), lost: p2.lost + (team1Won ? 1 : 0), gamesPlayed: p2.gamesPlayed + 1 });
-    } else {
-      // Doubles: each player rated against each opponent individually
-      // Read all pre-game ratings first, then apply updates
-      const pre = new Map<string, RCRating>();
-      [...game.team1, ...game.team2].forEach(n => pre.set(n, { ...get(n) }));
+  if (!isDoubles) {
+    update(game.team1[0], game.team2, team1Won);
+    update(game.team2[0], game.team1, !team1Won);
+  } else {
+    game.team1.forEach(n => update(n, game.team2, team1Won));
+    game.team2.forEach(n => update(n, game.team1, !team1Won));
+  }
+}
 
-      game.team1.forEach(name => {
-        const p = pre.get(name)!;
-        const results = game.team2.map(opp => {
-          const o = pre.get(opp)!;
-          return { rOpp: o.rating, sdOpp: o.sd, score: team1Won ? 1 : 0 };
-        });
-        const u = rcUpdate(p.rating, p.sd, results);
-        map.set(name, { ...get(name), ...u, won: get(name).won + (team1Won ? 1 : 0), lost: get(name).lost + (team1Won ? 0 : 1), gamesPlayed: get(name).gamesPlayed + 1 });
-      });
+export function computeRCRatings(games: BaselineGame[], type: 'singles' | 'doubles'): PlayerRatingEntry[] {
+  const map = new Map<string, PlayerRatingEntry>();
+  [...games].filter(g => g.type === type).sort((a, b) => a.createdAt - b.createdAt)
+    .forEach(g => applyRCGame(map, g));
+  return Array.from(map.values()).sort((a, b) => b.rating - a.rating);
+}
 
-      game.team2.forEach(name => {
-        const p = pre.get(name)!;
-        const results = game.team1.map(opp => {
-          const o = pre.get(opp)!;
-          return { rOpp: o.rating, sdOpp: o.sd, score: team1Won ? 0 : 1 };
-        });
-        const u = rcUpdate(p.rating, p.sd, results);
-        map.set(name, { ...get(name), ...u, won: get(name).won + (team1Won ? 0 : 1), lost: get(name).lost + (team1Won ? 1 : 0), gamesPlayed: get(name).gamesPlayed + 1 });
-      });
-    }
+// ---------------------------------------------------------------------------
+// Glicko-2 rating system
+// Glickman (2001) — full spec with volatility via Illinois algorithm
+// ---------------------------------------------------------------------------
+
+const G2_SCALE = 173.7178;         // converts display ↔ internal scale
+const G2_INIT_R = 1500;            // initial display rating
+const G2_INIT_RD = 350;            // initial rating deviation (display)
+const G2_INIT_SIGMA = 0.06;        // initial volatility
+const G2_TAU = 0.5;                // system constant (constrains σ change)
+const G2_MIN_RD = 30;              // floor RD (display)
+const G2_EPSILON = 0.000001;       // Illinois convergence tolerance
+
+interface G2State { mu: number; phi: number; sigma: number }
+
+function g2G(phi: number): number {
+  return 1 / Math.sqrt(1 + 3 * phi * phi / (Math.PI * Math.PI));
+}
+
+function g2E(mu: number, muJ: number, phiJ: number): number {
+  return 1 / (1 + Math.exp(-g2G(phiJ) * (mu - muJ)));
+}
+
+// Illinois algorithm to find new volatility σ'
+function g2NewSigma(phi: number, sigma: number, v: number, delta: number): number {
+  const a = Math.log(sigma * sigma);
+  const dSq = delta * delta;
+  const phiSq = phi * phi;
+
+  function f(x: number): number {
+    const ex = Math.exp(x);
+    return (ex * (dSq - phiSq - v - ex)) / (2 * Math.pow(phiSq + v + ex, 2))
+      - (x - a) / (G2_TAU * G2_TAU);
   }
 
-  return Array.from(map.values()).sort((a, b) => b.rating - a.rating);
+  let A = a;
+  let B = dSq > phiSq + v ? Math.log(dSq - phiSq - v) : (() => {
+    let k = 1; while (f(a - k * G2_TAU) < 0) k++; return a - k * G2_TAU;
+  })();
+
+  let fA = f(A), fB = f(B);
+  while (Math.abs(B - A) > G2_EPSILON) {
+    const C = A + (A - B) * fA / (fB - fA);
+    const fC = f(C);
+    if (fC * fB < 0) { A = B; fA = fB; } else { fA /= 2; }
+    B = C; fB = fC;
+  }
+  return Math.exp(A / 2);
+}
+
+function g2Update(state: G2State, results: { muJ: number; phiJ: number; score: number }[]): G2State {
+  if (results.length === 0) {
+    const phiStar = Math.min(Math.sqrt(state.phi * state.phi + state.sigma * state.sigma), G2_INIT_RD / G2_SCALE);
+    return { ...state, phi: phiStar };
+  }
+
+  const v = 1 / results.reduce((s, r) => {
+    const g = g2G(r.phiJ); const e = g2E(state.mu, r.muJ, r.phiJ);
+    return s + g * g * e * (1 - e);
+  }, 0);
+
+  const delta = v * results.reduce((s, r) =>
+    s + g2G(r.phiJ) * (r.score - g2E(state.mu, r.muJ, r.phiJ)), 0);
+
+  const newSigma = g2NewSigma(state.phi, state.sigma, v, delta);
+  const phiStar = Math.sqrt(state.phi * state.phi + newSigma * newSigma);
+  const newPhi = Math.max(1 / Math.sqrt(1 / (phiStar * phiStar) + 1 / v), G2_MIN_RD / G2_SCALE);
+  const newMu = state.mu + newPhi * newPhi * results.reduce((s, r) =>
+    s + g2G(r.phiJ) * (r.score - g2E(state.mu, r.muJ, r.phiJ)), 0);
+
+  return { mu: newMu, phi: newPhi, sigma: newSigma };
+}
+
+function applyG2Game(
+  map: Map<string, { entry: PlayerRatingEntry; g2: G2State }>,
+  game: BaselineGame,
+): void {
+  const team1Won = game.winner === 1;
+
+  function get(name: string) {
+    if (!map.has(name)) {
+      const g2: G2State = { mu: 0, phi: G2_INIT_RD / G2_SCALE, sigma: G2_INIT_SIGMA };
+      const entry: PlayerRatingEntry = { name, rating: G2_INIT_R, uncertainty: G2_INIT_RD, volatility: G2_INIT_SIGMA, won: 0, lost: 0, gamesPlayed: 0 };
+      map.set(name, { entry, g2 });
+    }
+    return map.get(name)!;
+  }
+
+  const pre = new Map<string, { entry: PlayerRatingEntry; g2: G2State }>();
+  [...game.team1, ...game.team2].forEach(n => { const v = get(n); pre.set(n, { entry: { ...v.entry }, g2: { ...v.g2 } }); });
+
+  const update = (name: string, opponents: string[], won: boolean) => {
+    const { g2 } = pre.get(name)!;
+    const results = opponents.map(opp => {
+      const o = pre.get(opp)!.g2;
+      return { muJ: o.mu, phiJ: o.phi, score: won ? 1 : 0 };
+    });
+    const newG2 = g2Update(g2, results);
+    const newRating = G2_SCALE * newG2.mu + G2_INIT_R;
+    const newRD = G2_SCALE * newG2.phi;
+    const cur = get(name);
+    map.set(name, {
+      g2: newG2,
+      entry: { ...cur.entry, rating: newRating, uncertainty: newRD, volatility: newG2.sigma, won: cur.entry.won + (won ? 1 : 0), lost: cur.entry.lost + (won ? 0 : 1), gamesPlayed: cur.entry.gamesPlayed + 1 },
+    });
+  };
+
+  if (game.type !== 'doubles') {
+    update(game.team1[0], game.team2, team1Won);
+    update(game.team2[0], game.team1, !team1Won);
+  } else {
+    game.team1.forEach(n => update(n, game.team2, team1Won));
+    game.team2.forEach(n => update(n, game.team1, !team1Won));
+  }
+}
+
+export function computeGlicko2Ratings(games: BaselineGame[], type: 'singles' | 'doubles'): PlayerRatingEntry[] {
+  const map = new Map<string, { entry: PlayerRatingEntry; g2: G2State }>();
+  [...games].filter(g => g.type === type).sort((a, b) => a.createdAt - b.createdAt)
+    .forEach(g => applyG2Game(map, g));
+  return Array.from(map.values()).map(v => v.entry).sort((a, b) => b.rating - a.rating);
 }
