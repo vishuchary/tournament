@@ -74,6 +74,18 @@ export interface BaselineRanking {
   points: number;    // wins * 2
 }
 
+export interface PlayerRatingEntry {
+  name: string;
+  rating: number;
+  uncertainty: number;  // SD (RC) or RD (Glicko-2)
+  volatility?: number;  // Glicko-2 σ only
+  won: number;
+  lost: number;
+  gamesPlayed: number;
+  algo: 'rc' | 'glicko2';
+  type: 'singles' | 'doubles';
+}
+
 export interface TeamStats {
   team: Team;
   matchesPlayed: number;

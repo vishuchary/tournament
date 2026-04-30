@@ -1,10 +1,16 @@
 import {
   collection, doc, setDoc, deleteDoc,
-  onSnapshot, query, orderBy, writeBatch,
+  onSnapshot, query, orderBy,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { Tournament, TournamentLevel, Group, Match, Player, BaselineGame, BaselineRanking } from './types';
+import type { Tournament, TournamentLevel, Group, Match, Player, BaselineGame, PlayerRatingEntry } from './types';
 import type { PlayerRanking } from './rankings';
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'https://backend-five-gules-97.vercel.app';
+
+// ---------------------------------------------------------------------------
+// Firestore helpers
+// ---------------------------------------------------------------------------
 
 // Firestore stores arrays natively, but migrated RTDB data may have
 // the object-with-numeric-keys shape. Keep toArray as a safeguard.
@@ -52,6 +58,36 @@ function normalizeTournament(raw: any): Tournament {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Backend API calls (admin-only; pass Firebase ID token)
+// ---------------------------------------------------------------------------
+
+export async function triggerRankingsRecompute(token: string): Promise<void> {
+  try {
+    await fetch(`${BACKEND_URL}/rankings/recompute`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch (err) {
+    console.error('Backend rankings recompute failed:', err);
+  }
+}
+
+export async function triggerBaselineRatingsRecompute(token: string): Promise<void> {
+  try {
+    await fetch(`${BACKEND_URL}/baseline/ratings/recompute`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch (err) {
+    console.error('Backend baseline ratings recompute failed:', err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tournaments
+// ---------------------------------------------------------------------------
+
 export function subscribeTournaments(callback: (tournaments: Tournament[]) => void): () => void {
   const q = query(collection(db, 'tournaments'), orderBy('createdAt', 'desc'));
   return onSnapshot(q, snapshot => {
@@ -69,6 +105,10 @@ export function deleteTournament(id: string): Promise<void> {
   return deleteDoc(doc(db, 'tournaments', id))
     .catch(err => console.error('Firestore delete failed:', err));
 }
+
+// ---------------------------------------------------------------------------
+// Players
+// ---------------------------------------------------------------------------
 
 export function subscribePlayers(callback: (players: Player[]) => void): () => void {
   const q = query(collection(db, 'players'), orderBy('name'));
@@ -88,18 +128,9 @@ export function deletePlayer(id: string): Promise<void> {
     .catch(err => console.error('Firestore delete player failed:', err));
 }
 
-function sanitizeKey(name: string): string {
-  return name.replace(/[.#$[\]/]/g, '_');
-}
-
-export function saveRankings(rankings: PlayerRanking[]): Promise<void> {
-  const batch = writeBatch(db);
-  rankings.forEach(r => {
-    batch.set(doc(db, 'rankings', sanitizeKey(r.name)), r);
-  });
-  return batch.commit()
-    .catch(err => console.error('Firestore save rankings failed:', err));
-}
+// ---------------------------------------------------------------------------
+// Tournament rankings (read from Firestore, written by backend)
+// ---------------------------------------------------------------------------
 
 export function subscribeRankings(callback: (rankings: PlayerRanking[]) => void): () => void {
   const q = query(collection(db, 'rankings'), orderBy('points', 'desc'));
@@ -108,6 +139,10 @@ export function subscribeRankings(callback: (rankings: PlayerRanking[]) => void)
     callback(list);
   });
 }
+
+// ---------------------------------------------------------------------------
+// Baseline games
+// ---------------------------------------------------------------------------
 
 export function subscribeBaselineGames(callback: (games: BaselineGame[]) => void): () => void {
   const q = query(collection(db, 'baseline_games'), orderBy('createdAt', 'desc'));
@@ -126,12 +161,14 @@ export function deleteBaselineGame(id: string): Promise<void> {
     .catch(err => console.error('Firestore delete baseline game failed:', err));
 }
 
-export function saveBaselineRankings(rankings: BaselineRanking[]): Promise<void> {
-  const batch = writeBatch(db);
-  rankings.forEach(r => {
-    const key = sanitizeKey(r.name) + '_' + r.type;
-    batch.set(doc(db, 'baseline_rankings', key), r);
+// ---------------------------------------------------------------------------
+// Baseline ratings (written by backend, read here)
+// ---------------------------------------------------------------------------
+
+export function subscribeBaselineRatings(
+  callback: (ratings: PlayerRatingEntry[]) => void,
+): () => void {
+  return onSnapshot(collection(db, 'baseline_ratings'), snapshot => {
+    callback(snapshot.docs.map(d => d.data() as PlayerRatingEntry));
   });
-  return batch.commit()
-    .catch(err => console.error('Firestore save baseline rankings failed:', err));
 }

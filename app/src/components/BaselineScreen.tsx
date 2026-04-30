@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
-import type { Player, BaselineGame, Game } from '../types';
+import type { Player, BaselineGame, Game, PlayerRatingEntry } from '../types';
 import { saveBaselineGame, deleteBaselineGame } from '../store';
-import { computeRCRatings, computeGlicko2Ratings } from '../rankings';
 
 function nanoid() {
   return Math.random().toString(36).slice(2, 10);
@@ -31,15 +30,16 @@ function matchWinner(games: Game[], setCount: number): 1 | 2 | null {
   return null;
 }
 
-
 type Tab = 'matches' | 'singles' | 'doubles';
 type RatingAlgo = 'rc' | 'glicko2';
 
 interface Props {
   games: BaselineGame[];
+  ratings: PlayerRatingEntry[];
   players: Player[];
   isAdmin: boolean;
   onBack: () => void;
+  onDataChange: () => void;
 }
 
 function PlayerPicker({ label, selected, players, exclude, onChange }: {
@@ -95,10 +95,7 @@ function ScoreEntry({ games, setCount, team1Label, team2Label, onChange }: {
         return (
           <div key={i} className={`grid grid-cols-3 gap-3 items-center transition-opacity ${!active ? 'opacity-30' : ''}`}>
             <input
-              type="number"
-              inputMode="numeric"
-              min={0}
-              disabled={!active}
+              type="number" inputMode="numeric" min={0} disabled={!active}
               className={`text-center border-2 rounded-xl py-3 text-2xl font-bold outline-none transition-colors w-full ${
                 gw === 1 ? 'border-green-400 bg-green-50 text-green-700' : 'border-gray-200 focus:border-blue-400'
               }`}
@@ -108,10 +105,7 @@ function ScoreEntry({ games, setCount, team1Label, team2Label, onChange }: {
             />
             <div className="text-center text-gray-400 text-xs font-medium">Game {i + 1}</div>
             <input
-              type="number"
-              inputMode="numeric"
-              min={0}
-              disabled={!active}
+              type="number" inputMode="numeric" min={0} disabled={!active}
               className={`text-center border-2 rounded-xl py-3 text-2xl font-bold outline-none transition-colors w-full ${
                 gw === 2 ? 'border-green-400 bg-green-50 text-green-700' : 'border-gray-200 focus:border-blue-400'
               }`}
@@ -132,27 +126,33 @@ function confidenceLabel(uncertainty: number): { text: string; color: string } {
   return { text: 'Unrated', color: 'text-gray-400 bg-gray-100' };
 }
 
-function RatingsTab({ games, type, algo }: { games: BaselineGame[]; type: 'singles' | 'doubles'; algo: RatingAlgo }) {
-  const ratings = useMemo(
-    () => algo === 'rc' ? computeRCRatings(games, type) : computeGlicko2Ratings(games, type),
-    [games, type, algo],
+function RatingsTab({
+  ratings, type, algo,
+}: {
+  ratings: PlayerRatingEntry[]; type: 'singles' | 'doubles'; algo: RatingAlgo;
+}) {
+  const filtered = useMemo(
+    () => ratings.filter(r => r.type === type && r.algo === algo).sort((a, b) => b.rating - a.rating),
+    [ratings, type, algo],
   );
+
   const MEDAL: Record<number, string> = { 1: '👑', 2: '🥈', 3: '🥉' };
-  const maxRating = ratings[0]?.rating ?? 1400;
+  const maxRating = filtered[0]?.rating ?? 1500;
   const minBase = algo === 'rc' ? 1000 : 1200;
 
-  if (ratings.length === 0) {
+  if (filtered.length === 0) {
     return (
       <div className="text-center py-12 text-gray-400">
         <p className="text-4xl mb-2">🏓</p>
-        <p>No {type} games recorded yet</p>
+        <p>No {type} ratings yet</p>
+        <p className="text-sm mt-1">Ratings are computed server-side after each match</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-2">
-      {ratings.map((r, i) => {
+      {filtered.map((r, i) => {
         const rank = i + 1;
         const isPodium = rank <= 3;
         const confidence = confidenceLabel(r.uncertainty);
@@ -187,7 +187,10 @@ function RatingsTab({ games, type, algo }: { games: BaselineGame[]; type: 'singl
                 )}
               </div>
               <div className="mt-1.5 h-1 bg-gray-100 rounded-full overflow-hidden">
-                <div className={`h-full rounded-full ${r.uncertainty > 150 ? 'bg-gray-300' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
+                <div
+                  className={`h-full rounded-full ${r.uncertainty > 150 ? 'bg-gray-300' : 'bg-blue-500'}`}
+                  style={{ width: `${pct}%` }}
+                />
               </div>
             </div>
           </div>
@@ -200,7 +203,7 @@ function RatingsTab({ games, type, algo }: { games: BaselineGame[]; type: 'singl
   );
 }
 
-export default function BaselineScreen({ games, players, isAdmin, onBack }: Props) {
+export default function BaselineScreen({ games, ratings, players, isAdmin, onBack, onDataChange }: Props) {
   const [tab, setTab] = useState<Tab>('matches');
   const [algo, setAlgo] = useState<RatingAlgo>('rc');
   const [showForm, setShowForm] = useState(false);
@@ -218,7 +221,6 @@ export default function BaselineScreen({ games, players, isAdmin, onBack }: Prop
   const needed = matchType === 'singles' ? 1 : 2;
   const playersReady = team1.length === needed && team2.length === needed;
 
-  // Re-initialize score rows when setCount changes
   function initGames(count: number) {
     setScoreGames(Array.from({ length: count }, () => ({ team1Score: 0, team2Score: 0 })));
   }
@@ -247,11 +249,13 @@ export default function BaselineScreen({ games, players, isAdmin, onBack }: Prop
     await saveBaselineGame(game);
     setSaving(false);
     resetForm();
+    onDataChange();
   }
 
   async function handleDelete(id: string) {
     if (!confirm('Delete this game?')) return;
     await deleteBaselineGame(id);
+    onDataChange();
   }
 
   const sortedGames = useMemo(() => [...games].sort((a, b) => b.createdAt - a.createdAt), [games]);
@@ -286,7 +290,6 @@ export default function BaselineScreen({ games, players, isAdmin, onBack }: Prop
         {showForm && isAdmin && (
           <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-5 space-y-4">
 
-            {/* Type + games count */}
             <div className="flex gap-2">
               {(['singles', 'doubles'] as const).map(t => (
                 <button key={t} onClick={() => { setMatchType(t); setT1p2(''); setT2p2(''); }}
@@ -306,7 +309,6 @@ export default function BaselineScreen({ games, players, isAdmin, onBack }: Prop
               </select>
             </div>
 
-            {/* Player pickers */}
             <div className="space-y-3">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Team 1</p>
               <div className="flex gap-2">
@@ -324,15 +326,12 @@ export default function BaselineScreen({ games, players, isAdmin, onBack }: Prop
               </div>
             </div>
 
-            {/* Score entry — only shown when players are picked */}
             {playersReady && scoreGames.length > 0 && (
               <div className="space-y-3 pt-1">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Scores</p>
                 <ScoreEntry
-                  games={scoreGames}
-                  setCount={setCount}
-                  team1Label={team1Label}
-                  team2Label={team2Label}
+                  games={scoreGames} setCount={setCount}
+                  team1Label={team1Label} team2Label={team2Label}
                   onChange={setScoreGames}
                 />
                 {winner !== null && (
@@ -407,6 +406,7 @@ export default function BaselineScreen({ games, players, isAdmin, onBack }: Prop
           </div>
         )}
 
+        {/* Algorithm toggle for ratings tabs */}
         {(tab === 'singles' || tab === 'doubles') && (
           <div className="flex gap-1 bg-gray-100 p-1 rounded-lg mb-4">
             <button
@@ -424,8 +424,8 @@ export default function BaselineScreen({ games, players, isAdmin, onBack }: Prop
           </div>
         )}
 
-        {tab === 'singles' && <RatingsTab games={games} type="singles" algo={algo} />}
-        {tab === 'doubles' && <RatingsTab games={games} type="doubles" algo={algo} />}
+        {tab === 'singles' && <RatingsTab ratings={ratings} type="singles" algo={algo} />}
+        {tab === 'doubles' && <RatingsTab ratings={ratings} type="doubles" algo={algo} />}
       </div>
     </div>
   );
