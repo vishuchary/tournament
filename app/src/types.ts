@@ -65,14 +65,6 @@ export interface BaselineGame {
   createdAt: number;
 }
 
-export interface BaselineRanking {
-  name: string;
-  type: 'singles' | 'doubles';
-  played: number;
-  wins: number;
-  losses: number;
-  points: number;    // wins * 2
-}
 
 export interface PlayerRatingEntry {
   name: string;

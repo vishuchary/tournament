@@ -4,15 +4,14 @@ import { auth } from './firebase';
 import type { Tournament, Player, BaselineGame, PlayerRatingEntry } from './types';
 import {
   subscribeTournaments, saveTournament, deleteTournament,
-  subscribePlayers, subscribeRankings, subscribeBaselineGames,
-  subscribeBaselineRatings,
-  triggerRankingsRecompute, triggerBaselineRatingsRecompute,
+  subscribePlayers, subscribeBaselineGames,
+  subscribeBaselineRatings, subscribeAlgoSetting, saveAlgoSetting,
+  triggerBaselineRatingsRecompute,
+  type RatingAlgo,
 } from './store';
-import type { PlayerRanking } from './rankings';
 import TournamentSetup from './components/TournamentSetup';
 import TournamentView from './components/TournamentView';
 import PlayersScreen from './components/PlayersScreen';
-import RankingsScreen from './components/RankingsScreen';
 import PlayerStatsScreen from './components/PlayerStatsScreen';
 import BaselineScreen from './components/BaselineScreen';
 import AdminLogin from './components/AdminLogin';
@@ -25,8 +24,7 @@ type View =
   | { type: 'import' }
   | { type: 'tournament'; id: string }
   | { type: 'players' }
-  | { type: 'rankings' }
-  | { type: 'playerStats'; name: string }
+  | { type: 'playerStats'; name: string; from: 'baseline' }
   | { type: 'baseline' };
 
 function getTournamentStatus(t: Tournament): 'not-started' | 'in-progress' | 'completed' {
@@ -88,14 +86,13 @@ function TournamentCard({ t, onClick }: { t: Tournament; onClick: () => void }) 
 export default function App() {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
-  const [rankings, setRankings] = useState<PlayerRanking[]>([]);
   const [baselineGames, setBaselineGames] = useState<BaselineGame[]>([]);
   const [baselineRatings, setBaselineRatings] = useState<PlayerRatingEntry[]>([]);
+  const [algo, setAlgo] = useState<RatingAlgo>('rc');
   const [view, setView] = useState<View>({ type: 'home' });
   const [user, setUser] = useState<User | null>(null);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const hasAutoNavigated = useRef(false);
-  const hasInitRankings = useRef(false);
 
   const isAdmin = !!user;
 
@@ -112,21 +109,17 @@ export default function App() {
         const inProgress = list.find(t => getTournamentStatus(t) === 'in-progress');
         if (inProgress) setView({ type: 'tournament', id: inProgress.id });
       }
-      // Backfill rankings on first load for existing data (no admin token needed — uses stored data)
-      if (!hasInitRankings.current && list.length > 0) {
-        hasInitRankings.current = true;
-      }
     });
     const unsubscribePlayers = subscribePlayers(setPlayers);
-    const unsubscribeRankings = subscribeRankings(setRankings);
     const unsubscribeBaseline = subscribeBaselineGames(setBaselineGames);
     const unsubscribeBaselineRatings = subscribeBaselineRatings(setBaselineRatings);
+    const unsubscribeAlgo = subscribeAlgoSetting(setAlgo);
     return () => {
       unsubscribeTournaments();
       unsubscribePlayers();
-      unsubscribeRankings();
       unsubscribeBaseline();
       unsubscribeBaselineRatings();
+      unsubscribeAlgo();
     };
   }, []);
 
@@ -137,27 +130,26 @@ export default function App() {
   async function handleCreate(t: Tournament) {
     setTournaments(prev => [t, ...prev]);
     await saveTournament(t);
-    const token = await getToken();
-    if (token) triggerRankingsRecompute(token);
     setView({ type: 'tournament', id: t.id });
   }
 
   async function handleUpdate(t: Tournament) {
     setTournaments(prev => prev.map(x => x.id === t.id ? t : x));
     await saveTournament(t);
-    const token = await getToken();
-    if (token) triggerRankingsRecompute(token);
   }
 
   async function handleDelete(id: string) {
     await deleteTournament(id);
-    const token = await getToken();
-    if (token) triggerRankingsRecompute(token);
     setView({ type: 'home' });
   }
 
-  async function handleBaselineChange(token: string) {
-    triggerBaselineRatingsRecompute(token);
+  async function handleAlgoChange(newAlgo: RatingAlgo) {
+    await saveAlgoSetting(newAlgo);
+  }
+
+  async function handleBaselineDataChange() {
+    const token = await getToken();
+    if (token) triggerBaselineRatingsRecompute(token);
   }
 
   if (view.type === 'new') {
@@ -185,25 +177,12 @@ export default function App() {
     return <PlayersScreen players={players} isAdmin={isAdmin} onBack={() => setView({ type: 'home' })} />;
   }
 
-  if (view.type === 'rankings') {
-    return (
-      <RankingsScreen
-        rankings={rankings}
-        tournaments={tournaments}
-        isAdmin={isAdmin}
-        onBack={() => setView({ type: 'home' })}
-        onRecompute={async () => { const token = await getToken(); if (token) triggerRankingsRecompute(token); }}
-        onPlayerClick={name => setView({ type: 'playerStats', name })}
-      />
-    );
-  }
-
   if (view.type === 'playerStats') {
     return (
       <PlayerStatsScreen
         playerName={view.name}
         tournaments={tournaments}
-        onBack={() => setView({ type: 'rankings' })}
+        onBack={() => setView({ type: view.from })}
       />
     );
   }
@@ -213,10 +192,13 @@ export default function App() {
       <BaselineScreen
         games={baselineGames}
         ratings={baselineRatings}
+        algo={algo}
         players={players}
         isAdmin={isAdmin}
         onBack={() => setView({ type: 'home' })}
-        onDataChange={() => getToken().then(t => { if (t) handleBaselineChange(t); })}
+        onAlgoChange={handleAlgoChange}
+        onDataChange={handleBaselineDataChange}
+        onPlayerClick={name => setView({ type: 'playerStats', name, from: 'baseline' })}
       />
     );
   }
@@ -283,12 +265,6 @@ export default function App() {
             )}
             <button
               onClick={() => setView({ type: 'baseline' })}
-              className="bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-lg font-medium hover:border-gray-300 transition-colors text-sm"
-            >
-              Baseline
-            </button>
-            <button
-              onClick={() => setView({ type: 'rankings' })}
               className="bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-lg font-medium hover:border-gray-300 transition-colors text-sm"
             >
               Rankings

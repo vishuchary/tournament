@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .routers import rankings, tournaments, baseline
+from .routers import tournaments, baseline
 from .services.firestore_client import get_firestore
 import os
 
@@ -16,7 +16,6 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
-app.include_router(rankings.router)
 app.include_router(tournaments.router)
 app.include_router(baseline.router)
 

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import type { Player, BaselineGame, Game, PlayerRatingEntry } from '../types';
-import { saveBaselineGame, deleteBaselineGame } from '../store';
+import { saveBaselineGame, deleteBaselineGame, type RatingAlgo } from '../store';
 
 function nanoid() {
   return Math.random().toString(36).slice(2, 10);
@@ -31,15 +31,17 @@ function matchWinner(games: Game[], setCount: number): 1 | 2 | null {
 }
 
 type Tab = 'matches' | 'singles' | 'doubles';
-type RatingAlgo = 'rc' | 'glicko2';
 
 interface Props {
   games: BaselineGame[];
   ratings: PlayerRatingEntry[];
+  algo: RatingAlgo;
   players: Player[];
   isAdmin: boolean;
   onBack: () => void;
+  onAlgoChange: (algo: RatingAlgo) => void;
   onDataChange: () => void;
+  onPlayerClick?: (name: string) => void;
 }
 
 function PlayerPicker({ label, selected, players, exclude, onChange }: {
@@ -127,9 +129,9 @@ function confidenceLabel(uncertainty: number): { text: string; color: string } {
 }
 
 function RatingsTab({
-  ratings, type, algo,
+  ratings, type, algo, onPlayerClick,
 }: {
-  ratings: PlayerRatingEntry[]; type: 'singles' | 'doubles'; algo: RatingAlgo;
+  ratings: PlayerRatingEntry[]; type: 'singles' | 'doubles'; algo: RatingAlgo; onPlayerClick?: (name: string) => void;
 }) {
   const filtered = useMemo(
     () => ratings.filter(r => r.type === type && r.algo === algo).sort((a, b) => b.rating - a.rating),
@@ -173,7 +175,10 @@ function RatingsTab({
             <span className="text-sm font-bold text-gray-400 w-6 shrink-0 text-center">{MEDAL[rank] ?? rank}</span>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
-                <p className="font-semibold text-gray-900 text-sm truncate">{r.name}</p>
+                <p
+                  className={`font-semibold text-gray-900 text-sm truncate ${onPlayerClick ? 'cursor-pointer hover:text-blue-600 hover:underline' : ''}`}
+                  onClick={() => onPlayerClick?.(r.name)}
+                >{r.name}</p>
                 <div className="text-right shrink-0">
                   <span className="font-bold text-lg text-gray-900">{Math.round(r.rating)}</span>
                   <span className="text-xs text-gray-400 ml-1">{uncertLabel} {Math.round(r.uncertainty)}</span>
@@ -203,9 +208,8 @@ function RatingsTab({
   );
 }
 
-export default function BaselineScreen({ games, ratings, players, isAdmin, onBack, onDataChange }: Props) {
+export default function BaselineScreen({ games, ratings, algo, players, isAdmin, onBack, onAlgoChange, onDataChange, onPlayerClick }: Props) {
   const [tab, setTab] = useState<Tab>('matches');
-  const [algo, setAlgo] = useState<RatingAlgo>('rc');
   const [showForm, setShowForm] = useState(false);
   const [matchType, setMatchType] = useState<'singles' | 'doubles'>('singles');
   const [setCount, setSetCount] = useState(3);
@@ -275,7 +279,7 @@ export default function BaselineScreen({ games, ratings, players, isAdmin, onBac
 
         <div className="flex items-center gap-3 mb-4">
           <button onClick={onBack} className="text-gray-500 hover:text-gray-700 text-sm shrink-0">← Back</button>
-          <h1 className="text-xl font-bold text-gray-900">Baseline Games</h1>
+          <h1 className="text-xl font-bold text-gray-900">Rankings</h1>
           {isAdmin && (
             <button
               onClick={() => { setShowForm(v => !v); if (!showForm) initGames(setCount); }}
@@ -406,26 +410,32 @@ export default function BaselineScreen({ games, ratings, players, isAdmin, onBac
           </div>
         )}
 
-        {/* Algorithm toggle for ratings tabs */}
+        {/* Algorithm selector — admin sets it; shown as read-only label for viewers */}
         {(tab === 'singles' || tab === 'doubles') && (
-          <div className="flex gap-1 bg-gray-100 p-1 rounded-lg mb-4">
-            <button
-              onClick={() => setAlgo('rc')}
-              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${algo === 'rc' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              Ratings Central
-            </button>
-            <button
-              onClick={() => setAlgo('glicko2')}
-              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${algo === 'glicko2' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              Glicko-2
-            </button>
-          </div>
+          isAdmin ? (
+            <div className="flex gap-1 bg-gray-100 p-1 rounded-lg mb-4">
+              <button
+                onClick={() => onAlgoChange('rc')}
+                className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${algo === 'rc' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Ratings Central
+              </button>
+              <button
+                onClick={() => onAlgoChange('glicko2')}
+                className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${algo === 'glicko2' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Glicko-2
+              </button>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400 mb-3 text-right">
+              {algo === 'rc' ? 'Ratings Central' : 'Glicko-2'}
+            </p>
+          )
         )}
 
-        {tab === 'singles' && <RatingsTab ratings={ratings} type="singles" algo={algo} />}
-        {tab === 'doubles' && <RatingsTab ratings={ratings} type="doubles" algo={algo} />}
+        {tab === 'singles' && <RatingsTab ratings={ratings} type="singles" algo={algo} onPlayerClick={onPlayerClick} />}
+        {tab === 'doubles' && <RatingsTab ratings={ratings} type="doubles" algo={algo} onPlayerClick={onPlayerClick} />}
       </div>
     </div>
   );
