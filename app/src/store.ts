@@ -60,13 +60,13 @@ function normalizeTournament(raw: any): Tournament {
 // ---------------------------------------------------------------------------
 
 export async function triggerBaselineRatingsRecompute(token: string): Promise<void> {
-  try {
-    await fetch(`${BACKEND_URL}/baseline/ratings/recompute`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-  } catch (err) {
-    console.error('Backend baseline ratings recompute failed:', err);
+  const res = await fetch(`${BACKEND_URL}/baseline/ratings/recompute`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`Recompute failed (${res.status}): ${text}`);
   }
 }
 

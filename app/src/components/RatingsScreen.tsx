@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import type { PlayerRatingEntry } from '../types';
 import type { RatingAlgo } from '../store';
 
@@ -104,11 +104,25 @@ interface Props {
 export default function RatingsScreen({ ratings, algo, isAdmin, onBack, onAlgoChange, onRecompute, onPlayerClick }: Props) {
   const [tab, setTab] = useState<'singles' | 'doubles'>('singles');
   const [recomputing, setRecomputing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isAdmin && ratings.length === 0) {
+      handleRecompute();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
 
   async function handleRecompute() {
     setRecomputing(true);
-    await onRecompute();
-    setRecomputing(false);
+    setError(null);
+    try {
+      await onRecompute();
+    } catch {
+      setError('Recompute failed — check backend connection');
+    } finally {
+      setRecomputing(false);
+    }
   }
 
   return (
@@ -128,6 +142,10 @@ export default function RatingsScreen({ ratings, algo, isAdmin, onBack, onAlgoCh
             </button>
           )}
         </div>
+
+        {error && (
+          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2.5 rounded-xl">{error}</div>
+        )}
 
         {/* Algorithm toggle — admin only */}
         {isAdmin ? (

@@ -151,7 +151,7 @@ export default function App() {
 
   async function handleBaselineDataChange() {
     const token = await getToken();
-    if (token) triggerBaselineRatingsRecompute(token);
+    if (token) await triggerBaselineRatingsRecompute(token);
   }
 
   if (view.type === 'new') {
