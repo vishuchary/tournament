@@ -13,7 +13,7 @@ import TournamentSetup from './components/TournamentSetup';
 import TournamentView from './components/TournamentView';
 import PlayersScreen from './components/PlayersScreen';
 import PlayerStatsScreen from './components/PlayerStatsScreen';
-import BaselineScreen from './components/BaselineScreen';
+import AdhocGamesScreen from './components/AdhocGamesScreen';
 import AdminLogin from './components/AdminLogin';
 import ImportCSV from './components/ImportCSV';
 import './index.css';
@@ -189,7 +189,7 @@ export default function App() {
 
   if (view.type === 'baseline') {
     return (
-      <BaselineScreen
+      <AdhocGamesScreen
         games={baselineGames}
         ratings={baselineRatings}
         algo={algo}
@@ -267,7 +267,7 @@ export default function App() {
               onClick={() => setView({ type: 'baseline' })}
               className="bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-lg font-medium hover:border-gray-300 transition-colors text-sm"
             >
-              Rankings
+              Adhoc Games
             </button>
             <button
               onClick={() => setView({ type: 'players' })}

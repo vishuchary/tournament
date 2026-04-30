@@ -147,7 +147,7 @@ function RatingsTab({
       <div className="text-center py-12 text-gray-400">
         <p className="text-4xl mb-2">🏓</p>
         <p>No {type} ratings yet</p>
-        <p className="text-sm mt-1">Ratings are computed server-side after each match</p>
+        <p className="text-sm mt-1">Ratings are computed after each match is saved</p>
       </div>
     );
   }
@@ -208,7 +208,7 @@ function RatingsTab({
   );
 }
 
-export default function BaselineScreen({ games, ratings, algo, players, isAdmin, onBack, onAlgoChange, onDataChange, onPlayerClick }: Props) {
+export default function AdhocGamesScreen({ games, ratings, algo, players, isAdmin, onBack, onAlgoChange, onDataChange, onPlayerClick }: Props) {
   const [tab, setTab] = useState<Tab>('matches');
   const [showForm, setShowForm] = useState(false);
   const [matchType, setMatchType] = useState<'singles' | 'doubles'>('singles');
@@ -279,7 +279,7 @@ export default function BaselineScreen({ games, ratings, algo, players, isAdmin,
 
         <div className="flex items-center gap-3 mb-4">
           <button onClick={onBack} className="text-gray-500 hover:text-gray-700 text-sm shrink-0">← Back</button>
-          <h1 className="text-xl font-bold text-gray-900">Rankings</h1>
+          <h1 className="text-xl font-bold text-gray-900">Adhoc Games</h1>
           {isAdmin && (
             <button
               onClick={() => { setShowForm(v => !v); if (!showForm) initGames(setCount); }}
@@ -372,7 +372,7 @@ export default function BaselineScreen({ games, ratings, algo, players, isAdmin,
             {sortedGames.length === 0 ? (
               <div className="text-center py-12 text-gray-400">
                 <p className="text-4xl mb-2">🏓</p>
-                <p>No baseline games yet</p>
+                <p>No adhoc games yet</p>
                 {isAdmin && <p className="text-sm mt-1">Tap "+ Add Match" to record a game</p>}
               </div>
             ) : sortedGames.map(g => {
