@@ -3,7 +3,7 @@ import {
   onSnapshot, query, orderBy, writeBatch,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { Tournament, TournamentLevel, Group, Match, Player } from './types';
+import type { Tournament, TournamentLevel, Group, Match, Player, BaselineGame, BaselineRanking } from './types';
 import type { PlayerRanking } from './rankings';
 
 // Firestore stores arrays natively, but migrated RTDB data may have
@@ -107,4 +107,31 @@ export function subscribeRankings(callback: (rankings: PlayerRanking[]) => void)
     const list = snapshot.docs.map(d => d.data() as PlayerRanking);
     callback(list);
   });
+}
+
+export function subscribeBaselineGames(callback: (games: BaselineGame[]) => void): () => void {
+  const q = query(collection(db, 'baseline_games'), orderBy('createdAt', 'desc'));
+  return onSnapshot(q, snapshot => {
+    callback(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as BaselineGame)));
+  });
+}
+
+export function saveBaselineGame(g: BaselineGame): Promise<void> {
+  return setDoc(doc(db, 'baseline_games', g.id), g)
+    .catch(err => console.error('Firestore save baseline game failed:', err));
+}
+
+export function deleteBaselineGame(id: string): Promise<void> {
+  return deleteDoc(doc(db, 'baseline_games', id))
+    .catch(err => console.error('Firestore delete baseline game failed:', err));
+}
+
+export function saveBaselineRankings(rankings: BaselineRanking[]): Promise<void> {
+  const batch = writeBatch(db);
+  rankings.forEach(r => {
+    const key = sanitizeKey(r.name) + '_' + r.type;
+    batch.set(doc(db, 'baseline_rankings', key), r);
+  });
+  return batch.commit()
+    .catch(err => console.error('Firestore save baseline rankings failed:', err));
 }

@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './firebase';
-import type { Tournament, Player } from './types';
-import { subscribeTournaments, saveTournament, deleteTournament, subscribePlayers, saveRankings, subscribeRankings } from './store';
+import type { Tournament, Player, BaselineGame } from './types';
+import { subscribeTournaments, saveTournament, deleteTournament, subscribePlayers, saveRankings, subscribeRankings, subscribeBaselineGames } from './store';
 import { computePlayerRankings, type PlayerRanking } from './rankings';
 import TournamentSetup from './components/TournamentSetup';
 import TournamentView from './components/TournamentView';
 import PlayersScreen from './components/PlayersScreen';
 import RankingsScreen from './components/RankingsScreen';
 import PlayerStatsScreen from './components/PlayerStatsScreen';
+import BaselineScreen from './components/BaselineScreen';
 import AdminLogin from './components/AdminLogin';
 import ImportCSV from './components/ImportCSV';
 import './index.css';
@@ -20,7 +21,8 @@ type View =
   | { type: 'tournament'; id: string }
   | { type: 'players' }
   | { type: 'rankings' }
-  | { type: 'playerStats'; name: string };
+  | { type: 'playerStats'; name: string }
+  | { type: 'baseline' };
 
 function getTournamentStatus(t: Tournament): 'not-started' | 'in-progress' | 'completed' {
   const allMatches = t.levels.flatMap(l => l.groups.flatMap(g => g.matches));
@@ -82,6 +84,7 @@ export default function App() {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [rankings, setRankings] = useState<PlayerRanking[]>([]);
+  const [baselineGames, setBaselineGames] = useState<BaselineGame[]>([]);
   const [view, setView] = useState<View>({ type: 'home' });
   const [isAdmin, setIsAdmin] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
@@ -109,10 +112,12 @@ export default function App() {
     });
     const unsubscribePlayers = subscribePlayers(setPlayers);
     const unsubscribeRankings = subscribeRankings(setRankings);
+    const unsubscribeBaseline = subscribeBaselineGames(setBaselineGames);
     return () => {
       unsubscribeTournaments();
       unsubscribePlayers();
       unsubscribeRankings();
+      unsubscribeBaseline();
     };
   }, []);
 
@@ -189,6 +194,17 @@ export default function App() {
     );
   }
 
+  if (view.type === 'baseline') {
+    return (
+      <BaselineScreen
+        games={baselineGames}
+        players={players}
+        isAdmin={isAdmin}
+        onBack={() => setView({ type: 'home' })}
+      />
+    );
+  }
+
   if (view.type === 'tournament') {
     const t = tournaments.find(x => x.id === view.id);
     if (!t) return null;
@@ -249,6 +265,12 @@ export default function App() {
                 🔑 Admin
               </button>
             )}
+            <button
+              onClick={() => setView({ type: 'baseline' })}
+              className="bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-lg font-medium hover:border-gray-300 transition-colors text-sm"
+            >
+              Baseline
+            </button>
             <button
               onClick={() => setView({ type: 'rankings' })}
               className="bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-lg font-medium hover:border-gray-300 transition-colors text-sm"
