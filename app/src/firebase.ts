@@ -3,13 +3,13 @@ import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyD85kJXIBij0RmDAszBhvZWRjA-Zg8mISQ",
-  authDomain: "mhtt-tournament.firebaseapp.com",
-  projectId: "mhtt-tournament",
-  storageBucket: "mhtt-tournament.firebasestorage.app",
-  messagingSenderId: "779994883668",
-  appId: "1:779994883668:web:8359e0ded0ce19ea29efc1",
-  measurementId: "G-CHFEVD3N3P"
+  apiKey: "AIzaSyBx1L1Ar0UJRxUb6c5Z_e3VSj5Ka23STUI",
+  authDomain: "mhtt-tournament-a3e15.firebaseapp.com",
+  projectId: "mhtt-tournament-a3e15",
+  storageBucket: "mhtt-tournament-a3e15.firebasestorage.app",
+  messagingSenderId: "103008649101",
+  appId: "1:103008649101:web:35e724738e160a56b407c4",
+  measurementId: "G-MMR8YNZ3TM"
 };
 
 const app = initializeApp(firebaseConfig);
