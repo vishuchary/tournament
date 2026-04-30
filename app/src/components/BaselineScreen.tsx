@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
-import type { Player, BaselineGame, BaselineRanking, Game } from '../types';
+import type { Player, BaselineGame, Game } from '../types';
 import { saveBaselineGame, deleteBaselineGame } from '../store';
+import { computeRCRatings } from '../rankings';
 
 function nanoid() {
   return Math.random().toString(36).slice(2, 10);
@@ -30,24 +31,6 @@ function matchWinner(games: Game[], setCount: number): 1 | 2 | null {
   return null;
 }
 
-function computeBaselineRankings(games: BaselineGame[], type: 'singles' | 'doubles'): BaselineRanking[] {
-  const map = new Map<string, BaselineRanking>();
-  function get(name: string): BaselineRanking {
-    if (!map.has(name)) map.set(name, { name, type, played: 0, wins: 0, losses: 0, points: 0 });
-    return map.get(name)!;
-  }
-  for (const g of games) {
-    if (g.type !== type) continue;
-    const winners = g.winner === 1 ? g.team1 : g.team2;
-    const losers  = g.winner === 1 ? g.team2 : g.team1;
-    [...g.team1, ...g.team2].forEach(n => { get(n).played++; });
-    winners.forEach(n => { const r = get(n); r.wins++; r.points += 2; });
-    losers.forEach(n => { get(n).losses++; });
-  }
-  return Array.from(map.values()).sort((a, b) =>
-    b.points !== a.points ? b.points - a.points : b.wins - a.wins
-  );
-}
 
 type Tab = 'matches' | 'singles' | 'doubles';
 
@@ -142,12 +125,19 @@ function ScoreEntry({ games, setCount, team1Label, team2Label, onChange }: {
   );
 }
 
-function RankingsTab({ games, type }: { games: BaselineGame[]; type: 'singles' | 'doubles' }) {
-  const rankings = computeBaselineRankings(games, type);
-  const maxPts = rankings[0]?.points ?? 1;
-  const MEDAL: Record<number, string> = { 1: '👑', 2: '🥈', 3: '🥉' };
+// SD thresholds for confidence display
+function sdLabel(sd: number): { text: string; color: string } {
+  if (sd < 80)  return { text: 'Established', color: 'text-green-600 bg-green-50' };
+  if (sd < 150) return { text: 'Provisional', color: 'text-yellow-600 bg-yellow-50' };
+  return { text: 'Unrated', color: 'text-gray-400 bg-gray-100' };
+}
 
-  if (rankings.length === 0) {
+function RatingsTab({ games, type }: { games: BaselineGame[]; type: 'singles' | 'doubles' }) {
+  const ratings = useMemo(() => computeRCRatings(games, type), [games, type]);
+  const MEDAL: Record<number, string> = { 1: '👑', 2: '🥈', 3: '🥉' };
+  const maxRating = ratings[0]?.rating ?? 1400;
+
+  if (ratings.length === 0) {
     return (
       <div className="text-center py-12 text-gray-400">
         <p className="text-4xl mb-2">🏓</p>
@@ -158,11 +148,12 @@ function RankingsTab({ games, type }: { games: BaselineGame[]; type: 'singles' |
 
   return (
     <div className="space-y-2">
-      {rankings.map((r, i) => {
+      {ratings.map((r, i) => {
         const rank = i + 1;
-        const pct = maxPts > 0 ? Math.max(4, (r.points / maxPts) * 100) : 0;
-        const winRate = r.played > 0 ? Math.round((r.wins / r.played) * 100) : 0;
         const isPodium = rank <= 3;
+        const confidence = sdLabel(r.sd);
+        const winRate = r.gamesPlayed > 0 ? Math.round((r.won / r.gamesPlayed) * 100) : 0;
+        const pct = Math.max(10, ((r.rating - 1000) / (maxRating - 1000 || 1)) * 100);
         return (
           <div
             key={r.name}
@@ -178,17 +169,25 @@ function RankingsTab({ games, type }: { games: BaselineGame[]; type: 'singles' |
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
                 <p className="font-semibold text-gray-900 text-sm truncate">{r.name}</p>
-                <span className="font-bold text-sm shrink-0 text-gray-800">{r.points} pts</span>
+                <div className="text-right shrink-0">
+                  <span className="font-bold text-lg text-gray-900">{Math.round(r.rating)}</span>
+                  <span className="text-xs text-gray-400 ml-1">±{Math.round(r.sd)}</span>
+                </div>
               </div>
-              <span className="text-xs text-gray-400">{r.wins}W · {r.losses}L · {winRate}% win rate</span>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${confidence.color}`}>{confidence.text}</span>
+                <span className="text-xs text-gray-400">{r.won}W · {r.lost}L · {winRate}%</span>
+              </div>
               <div className="mt-1.5 h-1 bg-gray-100 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-400 rounded-full" style={{ width: `${pct}%` }} />
+                <div className={`h-full rounded-full ${r.sd > 150 ? 'bg-gray-300' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
               </div>
             </div>
           </div>
         );
       })}
-      <p className="text-xs text-center text-gray-400 pt-2">Win = +2 pts · Loss = 0 pts</p>
+      <p className="text-xs text-center text-gray-400 pt-2">
+        Ratings Central algorithm · ±SD = uncertainty · Established &lt; ±80
+      </p>
     </div>
   );
 }
@@ -399,8 +398,8 @@ export default function BaselineScreen({ games, players, isAdmin, onBack }: Prop
           </div>
         )}
 
-        {tab === 'singles' && <RankingsTab games={games} type="singles" />}
-        {tab === 'doubles' && <RankingsTab games={games} type="doubles" />}
+        {tab === 'singles' && <RatingsTab games={games} type="singles" />}
+        {tab === 'doubles' && <RatingsTab games={games} type="doubles" />}
       </div>
     </div>
   );

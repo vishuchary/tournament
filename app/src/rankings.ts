@@ -1,4 +1,4 @@
-import type { Group, Match, MatchFormat, Team, TeamStats, Tournament } from './types';
+import type { Group, Match, MatchFormat, Team, TeamStats, Tournament, BaselineGame } from './types';
 
 function shortName(fullName: string): string {
   const parts = fullName.trim().split(/\s+/);
@@ -339,4 +339,115 @@ export function generateMatches(teams: Team[]): { team1Id: string; team2Id: stri
     }
   }
   return pairs;
+}
+
+// ---------------------------------------------------------------------------
+// Ratings Central rating system
+// Based on: Marcus (2001) "New Table-Tennis Rating System", J Royal Stat Soc
+// ---------------------------------------------------------------------------
+
+// α = 0.0148540595817432 is the official Ratings Central logistic scale
+const RC_ALPHA = 0.0148540595817432;
+const RC_INITIAL_RATING = 1400;
+const RC_INITIAL_SD = 450;
+const RC_MIN_SD = 50;
+
+export interface RCRating {
+  name: string;
+  rating: number;
+  sd: number;        // standard deviation — lower = more certain
+  won: number;
+  lost: number;
+  gamesPlayed: number;
+}
+
+// Glicko-style attenuation of opponent SD
+function rcG(sd: number): number {
+  return 1 / Math.sqrt(1 + 3 * RC_ALPHA * RC_ALPHA * sd * sd / (Math.PI * Math.PI));
+}
+
+// Expected score for player with rating r vs opponent (rOpp, sdOpp)
+function rcE(r: number, rOpp: number, sdOpp: number): number {
+  return 1 / (1 + Math.exp(-rcG(sdOpp) * RC_ALPHA * (r - rOpp)));
+}
+
+// Bayesian update: apply a batch of results to a player
+function rcUpdate(
+  rating: number,
+  sd: number,
+  results: { rOpp: number; sdOpp: number; score: number }[], // score: 1=win, 0=loss
+): { rating: number; sd: number } {
+  if (results.length === 0) return { rating, sd };
+
+  const dSqInv = RC_ALPHA * RC_ALPHA * results.reduce((s, r) => {
+    const g = rcG(r.sdOpp);
+    const e = rcE(rating, r.rOpp, r.sdOpp);
+    return s + g * g * e * (1 - e);
+  }, 0);
+
+  const dSq = 1 / dSqInv;
+  const delta = RC_ALPHA * dSq * results.reduce((s, r) => {
+    return s + rcG(r.sdOpp) * (r.score - rcE(rating, r.rOpp, r.sdOpp));
+  }, 0);
+
+  const newRating = rating + delta;
+  const newSd = Math.max(Math.sqrt(1 / (1 / (sd * sd) + 1 / dSq)), RC_MIN_SD);
+  return { rating: newRating, sd: newSd };
+}
+
+export function computeRCRatings(games: BaselineGame[], type: 'singles' | 'doubles'): RCRating[] {
+  const map = new Map<string, RCRating>();
+
+  function get(name: string): RCRating {
+    if (!map.has(name)) map.set(name, {
+      name, rating: RC_INITIAL_RATING, sd: RC_INITIAL_SD,
+      won: 0, lost: 0, gamesPlayed: 0,
+    });
+    return map.get(name)!;
+  }
+
+  const sorted = [...games]
+    .filter(g => g.type === type)
+    .sort((a, b) => a.createdAt - b.createdAt);
+
+  for (const game of sorted) {
+    const team1Won = game.winner === 1;
+
+    if (type === 'singles') {
+      const p1 = get(game.team1[0]);
+      const p2 = get(game.team2[0]);
+      // Use pre-game ratings for both updates (simultaneous)
+      const u1 = rcUpdate(p1.rating, p1.sd, [{ rOpp: p2.rating, sdOpp: p2.sd, score: team1Won ? 1 : 0 }]);
+      const u2 = rcUpdate(p2.rating, p2.sd, [{ rOpp: p1.rating, sdOpp: p1.sd, score: team1Won ? 0 : 1 }]);
+      map.set(game.team1[0], { ...p1, ...u1, won: p1.won + (team1Won ? 1 : 0), lost: p1.lost + (team1Won ? 0 : 1), gamesPlayed: p1.gamesPlayed + 1 });
+      map.set(game.team2[0], { ...p2, ...u2, won: p2.won + (team1Won ? 0 : 1), lost: p2.lost + (team1Won ? 1 : 0), gamesPlayed: p2.gamesPlayed + 1 });
+    } else {
+      // Doubles: each player rated against each opponent individually
+      // Read all pre-game ratings first, then apply updates
+      const pre = new Map<string, RCRating>();
+      [...game.team1, ...game.team2].forEach(n => pre.set(n, { ...get(n) }));
+
+      game.team1.forEach(name => {
+        const p = pre.get(name)!;
+        const results = game.team2.map(opp => {
+          const o = pre.get(opp)!;
+          return { rOpp: o.rating, sdOpp: o.sd, score: team1Won ? 1 : 0 };
+        });
+        const u = rcUpdate(p.rating, p.sd, results);
+        map.set(name, { ...get(name), ...u, won: get(name).won + (team1Won ? 1 : 0), lost: get(name).lost + (team1Won ? 0 : 1), gamesPlayed: get(name).gamesPlayed + 1 });
+      });
+
+      game.team2.forEach(name => {
+        const p = pre.get(name)!;
+        const results = game.team1.map(opp => {
+          const o = pre.get(opp)!;
+          return { rOpp: o.rating, sdOpp: o.sd, score: team1Won ? 0 : 1 };
+        });
+        const u = rcUpdate(p.rating, p.sd, results);
+        map.set(name, { ...get(name), ...u, won: get(name).won + (team1Won ? 0 : 1), lost: get(name).lost + (team1Won ? 1 : 0), gamesPlayed: get(name).gamesPlayed + 1 });
+      });
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.rating - a.rating);
 }
