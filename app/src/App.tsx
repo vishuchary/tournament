@@ -13,7 +13,6 @@ import TournamentSetup from './components/TournamentSetup';
 import TournamentView from './components/TournamentView';
 import PlayersScreen from './components/PlayersScreen';
 import PlayerStatsScreen from './components/PlayerStatsScreen';
-import CompetitiveScreen from './components/CompetitiveScreen';
 import RatingsScreen from './components/RatingsScreen';
 import AdminLogin from './components/AdminLogin';
 import ImportCSV from './components/ImportCSV';
@@ -25,8 +24,7 @@ type View =
   | { type: 'import' }
   | { type: 'tournament'; id: string }
   | { type: 'players' }
-  | { type: 'playerStats'; name: string; from: 'baseline' | 'ratings' }
-  | { type: 'baseline' }
+  | { type: 'playerStats'; name: string; from: 'ratings' }
   | { type: 'ratings' };
 
 function getTournamentStatus(t: Tournament): 'not-started' | 'in-progress' | 'completed' {
@@ -189,27 +187,17 @@ export default function App() {
     );
   }
 
-  if (view.type === 'baseline') {
-    return (
-      <CompetitiveScreen
-        games={baselineGames}
-        players={players}
-        isAdmin={isAdmin}
-        onBack={() => setView({ type: 'home' })}
-        onDataChange={handleBaselineDataChange}
-      />
-    );
-  }
-
   if (view.type === 'ratings') {
     return (
       <RatingsScreen
+        games={baselineGames}
         ratings={baselineRatings}
         algo={algo}
+        players={players}
         isAdmin={isAdmin}
         onBack={() => setView({ type: 'home' })}
         onAlgoChange={handleAlgoChange}
-        onRecompute={handleBaselineDataChange}
+        onDataChange={handleBaselineDataChange}
         onPlayerClick={name => setView({ type: 'playerStats', name, from: 'ratings' })}
       />
     );
@@ -280,12 +268,6 @@ export default function App() {
               className="bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-lg font-medium hover:border-gray-300 transition-colors text-sm"
             >
               Rankings
-            </button>
-            <button
-              onClick={() => setView({ type: 'baseline' })}
-              className="bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-lg font-medium hover:border-gray-300 transition-colors text-sm"
-            >
-              Competitive
             </button>
             <button
               onClick={() => setView({ type: 'players' })}
