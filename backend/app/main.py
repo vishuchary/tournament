@@ -23,9 +23,3 @@ app.include_router(tournaments.router)
 @app.get('/health')
 def health():
     return {'status': 'ok'}
-
-
-# Initialize Firestore on startup
-@app.on_event('startup')
-def startup():
-    get_firestore()
