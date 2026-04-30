@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
-import type { Player, BaselineGame, Game, PlayerRatingEntry } from '../types';
-import { saveBaselineGame, deleteBaselineGame, type RatingAlgo } from '../store';
+import type { Player, BaselineGame, Game } from '../types';
+import { saveBaselineGame, deleteBaselineGame } from '../store';
 
 function nanoid() {
   return Math.random().toString(36).slice(2, 10);
@@ -30,18 +30,12 @@ function matchWinner(games: Game[], setCount: number): 1 | 2 | null {
   return null;
 }
 
-type Tab = 'matches' | 'singles' | 'doubles';
-
 interface Props {
   games: BaselineGame[];
-  ratings: PlayerRatingEntry[];
-  algo: RatingAlgo;
   players: Player[];
   isAdmin: boolean;
   onBack: () => void;
-  onAlgoChange: (algo: RatingAlgo) => void;
   onDataChange: () => void;
-  onPlayerClick?: (name: string) => void;
 }
 
 function PlayerPicker({ label, selected, players, exclude, onChange }: {
@@ -122,94 +116,7 @@ function ScoreEntry({ games, setCount, team1Label, team2Label, onChange }: {
   );
 }
 
-function confidenceLabel(uncertainty: number): { text: string; color: string } {
-  if (uncertainty < 80)  return { text: 'Established', color: 'text-green-600 bg-green-50' };
-  if (uncertainty < 150) return { text: 'Provisional', color: 'text-yellow-600 bg-yellow-50' };
-  return { text: 'Unrated', color: 'text-gray-400 bg-gray-100' };
-}
-
-function RatingsTab({
-  ratings, type, algo, onPlayerClick,
-}: {
-  ratings: PlayerRatingEntry[]; type: 'singles' | 'doubles'; algo: RatingAlgo; onPlayerClick?: (name: string) => void;
-}) {
-  const filtered = useMemo(
-    () => ratings.filter(r => r.type === type && r.algo === algo).sort((a, b) => b.rating - a.rating),
-    [ratings, type, algo],
-  );
-
-  const MEDAL: Record<number, string> = { 1: '👑', 2: '🥈', 3: '🥉' };
-  const maxRating = filtered[0]?.rating ?? 1500;
-  const minBase = algo === 'rc' ? 1000 : 1200;
-
-  if (filtered.length === 0) {
-    return (
-      <div className="text-center py-12 text-gray-400">
-        <p className="text-4xl mb-2">🏓</p>
-        <p>No {type} ratings yet</p>
-        <p className="text-sm mt-1">Ratings are computed after each match is saved</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-2">
-      {filtered.map((r, i) => {
-        const rank = i + 1;
-        const isPodium = rank <= 3;
-        const confidence = confidenceLabel(r.uncertainty);
-        const winRate = r.gamesPlayed > 0 ? Math.round((r.won / r.gamesPlayed) * 100) : 0;
-        const pct = Math.max(10, ((r.rating - minBase) / (maxRating - minBase || 1)) * 100);
-        const uncertLabel = algo === 'rc' ? '±SD' : '±RD';
-        return (
-          <div
-            key={r.name}
-            className={`rounded-xl border px-4 py-3 flex items-center gap-3 ${
-              isPodium
-                ? rank === 1 ? 'border-yellow-300 bg-yellow-50'
-                  : rank === 2 ? 'border-gray-300 bg-gray-50'
-                  : 'border-orange-200 bg-orange-50'
-                : 'border-gray-200 bg-white'
-            }`}
-          >
-            <span className="text-sm font-bold text-gray-400 w-6 shrink-0 text-center">{MEDAL[rank] ?? rank}</span>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <p
-                  className={`font-semibold text-gray-900 text-sm truncate ${onPlayerClick ? 'cursor-pointer hover:text-blue-600 hover:underline' : ''}`}
-                  onClick={() => onPlayerClick?.(r.name)}
-                >{r.name}</p>
-                <div className="text-right shrink-0">
-                  <span className="font-bold text-lg text-gray-900">{Math.round(r.rating)}</span>
-                  <span className="text-xs text-gray-400 ml-1">{uncertLabel} {Math.round(r.uncertainty)}</span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${confidence.color}`}>{confidence.text}</span>
-                <span className="text-xs text-gray-400">{r.won}W · {r.lost}L · {winRate}%</span>
-                {algo === 'glicko2' && r.volatility !== undefined && (
-                  <span className="text-xs text-gray-400">σ {r.volatility.toFixed(3)}</span>
-                )}
-              </div>
-              <div className="mt-1.5 h-1 bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${r.uncertainty > 150 ? 'bg-gray-300' : 'bg-blue-500'}`}
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-            </div>
-          </div>
-        );
-      })}
-      <p className="text-xs text-center text-gray-400 pt-2">
-        {algo === 'rc' ? 'Ratings Central · ±SD = uncertainty' : 'Glicko-2 · ±RD = uncertainty · σ = volatility'} · Established &lt; ±80
-      </p>
-    </div>
-  );
-}
-
-export default function CompetitiveScreen({ games, ratings, algo, players, isAdmin, onBack, onAlgoChange, onDataChange, onPlayerClick }: Props) {
-  const [tab, setTab] = useState<Tab>('matches');
+export default function CompetitiveScreen({ games, players, isAdmin, onBack, onDataChange }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [matchType, setMatchType] = useState<'singles' | 'doubles'>('singles');
   const [setCount, setSetCount] = useState(3);
@@ -263,12 +170,6 @@ export default function CompetitiveScreen({ games, ratings, algo, players, isAdm
   }
 
   const sortedGames = useMemo(() => [...games].sort((a, b) => b.createdAt - a.createdAt), [games]);
-
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'matches', label: 'Matches' },
-    { id: 'singles', label: 'Singles' },
-    { id: 'doubles', label: 'Doubles' },
-  ];
 
   const team1Label = team1.length > 0 ? team1.join(' & ') : 'Team 1';
   const team2Label = team2.length > 0 ? team2.join(' & ') : 'Team 2';
@@ -356,86 +257,46 @@ export default function CompetitiveScreen({ games, ratings, algo, players, isAdm
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="flex gap-1 bg-gray-100 p-1 rounded-lg mb-5">
-          {tabs.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-colors ${tab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Matches tab */}
-        {tab === 'matches' && (
-          <div className="space-y-2">
-            {sortedGames.length === 0 ? (
-              <div className="text-center py-12 text-gray-400">
-                <p className="text-4xl mb-2">🏓</p>
-                <p>No competitive games yet</p>
-                {isAdmin && <p className="text-sm mt-1">Tap "+ Add Match" to record a game</p>}
-              </div>
-            ) : sortedGames.map(g => {
-              const winnerTeam = g.winner === 1 ? g.team1 : g.team2;
-              const loserTeam  = g.winner === 1 ? g.team2 : g.team1;
-              const t1wins = g.games?.filter(x => gameWinner(x.team1Score, x.team2Score) === 1).length ?? 0;
-              const t2wins = g.games?.filter(x => gameWinner(x.team1Score, x.team2Score) === 2).length ?? 0;
-              const scoreStr = g.winner === 1 ? `${t1wins}-${t2wins}` : `${t2wins}-${t1wins}`;
-              return (
-                <div key={g.id} className="bg-white border border-gray-200 rounded-xl px-4 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold text-gray-900">{winnerTeam.join(' & ')}</span>
-                        <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">Won {scoreStr}</span>
-                        <span className="text-sm text-gray-400">vs</span>
-                        <span className="text-sm text-gray-600">{loserTeam.join(' & ')}</span>
-                      </div>
-                      {g.games && g.games.length > 0 && (
-                        <p className="text-xs text-gray-400 mt-1">
-                          {g.games.map(x => `${x.team1Score}-${x.team2Score}`).join(', ')}
-                        </p>
-                      )}
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {g.type} · {new Date(g.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </p>
-                    </div>
-                    {isAdmin && (
-                      <button onClick={() => handleDelete(g.id)} className="text-gray-300 hover:text-red-400 text-lg shrink-0 transition-colors">×</button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Algorithm selector — admin sets it; shown as read-only label for viewers */}
-        {(tab === 'singles' || tab === 'doubles') && (
-          isAdmin ? (
-            <div className="flex gap-1 bg-gray-100 p-1 rounded-lg mb-4">
-              <button
-                onClick={() => onAlgoChange('rc')}
-                className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${algo === 'rc' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                Ratings Central
-              </button>
-              <button
-                onClick={() => onAlgoChange('glicko2')}
-                className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${algo === 'glicko2' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                Glicko-2
-              </button>
+        <div className="space-y-2">
+          {sortedGames.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">
+              <p className="text-4xl mb-2">🏓</p>
+              <p>No competitive games yet</p>
+              {isAdmin && <p className="text-sm mt-1">Tap "+ Add Match" to record a game</p>}
             </div>
-          ) : (
-            <p className="text-xs text-gray-400 mb-3 text-right">
-              {algo === 'rc' ? 'Ratings Central' : 'Glicko-2'}
-            </p>
-          )
-        )}
-
-        {tab === 'singles' && <RatingsTab ratings={ratings} type="singles" algo={algo} onPlayerClick={onPlayerClick} />}
-        {tab === 'doubles' && <RatingsTab ratings={ratings} type="doubles" algo={algo} onPlayerClick={onPlayerClick} />}
+          ) : sortedGames.map(g => {
+            const winnerTeam = g.winner === 1 ? g.team1 : g.team2;
+            const loserTeam  = g.winner === 1 ? g.team2 : g.team1;
+            const t1wins = g.games?.filter(x => gameWinner(x.team1Score, x.team2Score) === 1).length ?? 0;
+            const t2wins = g.games?.filter(x => gameWinner(x.team1Score, x.team2Score) === 2).length ?? 0;
+            const scoreStr = g.winner === 1 ? `${t1wins}-${t2wins}` : `${t2wins}-${t1wins}`;
+            return (
+              <div key={g.id} className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold text-gray-900">{winnerTeam.join(' & ')}</span>
+                      <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">Won {scoreStr}</span>
+                      <span className="text-sm text-gray-400">vs</span>
+                      <span className="text-sm text-gray-600">{loserTeam.join(' & ')}</span>
+                    </div>
+                    {g.games && g.games.length > 0 && (
+                      <p className="text-xs text-gray-400 mt-1">
+                        {g.games.map(x => `${x.team1Score}-${x.team2Score}`).join(', ')}
+                      </p>
+                    )}
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {g.type} · {new Date(g.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </p>
+                  </div>
+                  {isAdmin && (
+                    <button onClick={() => handleDelete(g.id)} className="text-gray-300 hover:text-red-400 text-lg shrink-0 transition-colors">×</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

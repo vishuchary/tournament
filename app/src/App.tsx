@@ -14,6 +14,7 @@ import TournamentView from './components/TournamentView';
 import PlayersScreen from './components/PlayersScreen';
 import PlayerStatsScreen from './components/PlayerStatsScreen';
 import CompetitiveScreen from './components/CompetitiveScreen';
+import RatingsScreen from './components/RatingsScreen';
 import AdminLogin from './components/AdminLogin';
 import ImportCSV from './components/ImportCSV';
 import './index.css';
@@ -24,8 +25,9 @@ type View =
   | { type: 'import' }
   | { type: 'tournament'; id: string }
   | { type: 'players' }
-  | { type: 'playerStats'; name: string; from: 'baseline' }
-  | { type: 'baseline' };
+  | { type: 'playerStats'; name: string; from: 'baseline' | 'ratings' }
+  | { type: 'baseline' }
+  | { type: 'ratings' };
 
 function getTournamentStatus(t: Tournament): 'not-started' | 'in-progress' | 'completed' {
   const allMatches = t.levels.flatMap(l => l.groups.flatMap(g => g.matches));
@@ -191,14 +193,24 @@ export default function App() {
     return (
       <CompetitiveScreen
         games={baselineGames}
-        ratings={baselineRatings}
-        algo={algo}
         players={players}
         isAdmin={isAdmin}
         onBack={() => setView({ type: 'home' })}
-        onAlgoChange={handleAlgoChange}
         onDataChange={handleBaselineDataChange}
-        onPlayerClick={name => setView({ type: 'playerStats', name, from: 'baseline' })}
+      />
+    );
+  }
+
+  if (view.type === 'ratings') {
+    return (
+      <RatingsScreen
+        ratings={baselineRatings}
+        algo={algo}
+        isAdmin={isAdmin}
+        onBack={() => setView({ type: 'home' })}
+        onAlgoChange={handleAlgoChange}
+        onRecompute={handleBaselineDataChange}
+        onPlayerClick={name => setView({ type: 'playerStats', name, from: 'ratings' })}
       />
     );
   }
@@ -263,6 +275,12 @@ export default function App() {
                 🔑 Admin
               </button>
             )}
+            <button
+              onClick={() => setView({ type: 'ratings' })}
+              className="bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-lg font-medium hover:border-gray-300 transition-colors text-sm"
+            >
+              Rankings
+            </button>
             <button
               onClick={() => setView({ type: 'baseline' })}
               className="bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-lg font-medium hover:border-gray-300 transition-colors text-sm"
