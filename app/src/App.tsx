@@ -1,13 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { auth } from './firebase';
-import type { Tournament, Player } from './types';
-import { subscribeTournaments, saveTournament, deleteTournament, subscribePlayers, saveRankings, subscribeRankings } from './store';
-import { computePlayerRankings, type PlayerRanking } from './rankings';
+import type { Tournament, Player, BaselineGame, PlayerRatingEntry } from './types';
+import {
+  subscribeTournaments, saveTournament, deleteTournament,
+  subscribePlayers, subscribeRankings, subscribeBaselineGames,
+  subscribeBaselineRatings,
+  triggerRankingsRecompute, triggerBaselineRatingsRecompute,
+} from './store';
+import type { PlayerRanking } from './rankings';
 import TournamentSetup from './components/TournamentSetup';
 import TournamentView from './components/TournamentView';
 import PlayersScreen from './components/PlayersScreen';
 import RankingsScreen from './components/RankingsScreen';
+import PlayerStatsScreen from './components/PlayerStatsScreen';
+import BaselineScreen from './components/BaselineScreen';
 import AdminLogin from './components/AdminLogin';
 import ImportCSV from './components/ImportCSV';
 import './index.css';
@@ -18,7 +25,9 @@ type View =
   | { type: 'import' }
   | { type: 'tournament'; id: string }
   | { type: 'players' }
-  | { type: 'rankings' };
+  | { type: 'rankings' }
+  | { type: 'playerStats'; name: string }
+  | { type: 'baseline' };
 
 function getTournamentStatus(t: Tournament): 'not-started' | 'in-progress' | 'completed' {
   const allMatches = t.levels.flatMap(l => l.groups.flatMap(g => g.matches));
@@ -80,14 +89,18 @@ export default function App() {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [rankings, setRankings] = useState<PlayerRanking[]>([]);
+  const [baselineGames, setBaselineGames] = useState<BaselineGame[]>([]);
+  const [baselineRatings, setBaselineRatings] = useState<PlayerRatingEntry[]>([]);
   const [view, setView] = useState<View>({ type: 'home' });
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const hasAutoNavigated = useRef(false);
   const hasInitRankings = useRef(false);
 
+  const isAdmin = !!user;
+
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, user => setIsAdmin(!!user));
+    const unsubscribeAuth = onAuthStateChanged(auth, u => setUser(u));
     return () => unsubscribeAuth();
   }, []);
 
@@ -99,44 +112,52 @@ export default function App() {
         const inProgress = list.find(t => getTournamentStatus(t) === 'in-progress');
         if (inProgress) setView({ type: 'tournament', id: inProgress.id });
       }
-      // Backfill rankings on first load (covers existing data + seed script tournaments)
+      // Backfill rankings on first load for existing data (no admin token needed — uses stored data)
       if (!hasInitRankings.current && list.length > 0) {
         hasInitRankings.current = true;
-        saveRankings(computePlayerRankings(list));
       }
     });
     const unsubscribePlayers = subscribePlayers(setPlayers);
     const unsubscribeRankings = subscribeRankings(setRankings);
+    const unsubscribeBaseline = subscribeBaselineGames(setBaselineGames);
+    const unsubscribeBaselineRatings = subscribeBaselineRatings(setBaselineRatings);
     return () => {
       unsubscribeTournaments();
       unsubscribePlayers();
       unsubscribeRankings();
+      unsubscribeBaseline();
+      unsubscribeBaselineRatings();
     };
   }, []);
 
-  function recomputeRankings(updatedTournaments: Tournament[]) {
-    saveRankings(computePlayerRankings(updatedTournaments));
+  async function getToken(): Promise<string> {
+    return (await user?.getIdToken()) ?? '';
   }
 
-  function handleCreate(t: Tournament) {
-    const updated = [t, ...tournaments];
-    setTournaments(updated);
-    saveTournament(t);
-    recomputeRankings(updated);
+  async function handleCreate(t: Tournament) {
+    setTournaments(prev => [t, ...prev]);
+    await saveTournament(t);
+    const token = await getToken();
+    if (token) triggerRankingsRecompute(token);
     setView({ type: 'tournament', id: t.id });
   }
 
-  function handleUpdate(t: Tournament) {
-    const updated = tournaments.map(x => x.id === t.id ? t : x);
-    setTournaments(updated);
-    saveTournament(t);
-    recomputeRankings(updated);
+  async function handleUpdate(t: Tournament) {
+    setTournaments(prev => prev.map(x => x.id === t.id ? t : x));
+    await saveTournament(t);
+    const token = await getToken();
+    if (token) triggerRankingsRecompute(token);
   }
 
-  function handleDelete(id: string) {
-    deleteTournament(id);
-    recomputeRankings(tournaments.filter(t => t.id !== id));
+  async function handleDelete(id: string) {
+    await deleteTournament(id);
+    const token = await getToken();
+    if (token) triggerRankingsRecompute(token);
     setView({ type: 'home' });
+  }
+
+  async function handleBaselineChange(token: string) {
+    triggerBaselineRatingsRecompute(token);
   }
 
   if (view.type === 'new') {
@@ -165,7 +186,39 @@ export default function App() {
   }
 
   if (view.type === 'rankings') {
-    return <RankingsScreen rankings={rankings} isAdmin={isAdmin} onBack={() => setView({ type: 'home' })} onRecompute={() => recomputeRankings(tournaments)} />;
+    return (
+      <RankingsScreen
+        rankings={rankings}
+        tournaments={tournaments}
+        isAdmin={isAdmin}
+        onBack={() => setView({ type: 'home' })}
+        onRecompute={async () => { const token = await getToken(); if (token) triggerRankingsRecompute(token); }}
+        onPlayerClick={name => setView({ type: 'playerStats', name })}
+      />
+    );
+  }
+
+  if (view.type === 'playerStats') {
+    return (
+      <PlayerStatsScreen
+        playerName={view.name}
+        tournaments={tournaments}
+        onBack={() => setView({ type: 'rankings' })}
+      />
+    );
+  }
+
+  if (view.type === 'baseline') {
+    return (
+      <BaselineScreen
+        games={baselineGames}
+        ratings={baselineRatings}
+        players={players}
+        isAdmin={isAdmin}
+        onBack={() => setView({ type: 'home' })}
+        onDataChange={() => getToken().then(t => { if (t) handleBaselineChange(t); })}
+      />
+    );
   }
 
   if (view.type === 'tournament') {
@@ -228,6 +281,12 @@ export default function App() {
                 🔑 Admin
               </button>
             )}
+            <button
+              onClick={() => setView({ type: 'baseline' })}
+              className="bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-lg font-medium hover:border-gray-300 transition-colors text-sm"
+            >
+              Baseline
+            </button>
             <button
               onClick={() => setView({ type: 'rankings' })}
               className="bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-lg font-medium hover:border-gray-300 transition-colors text-sm"

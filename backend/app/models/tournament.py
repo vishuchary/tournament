@@ -61,3 +61,28 @@ class PlayerRanking(BaseModel):
     bonusPts: int = 0
     gameWins: int = 0
     matchesPlayed: int = 0
+
+
+class BaselineGame(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    id: str
+    type: str  # 'singles' | 'doubles'
+    team1: list[str] = []
+    team2: list[str] = []
+    games: list[Game] = []
+    winner: int  # 1 | 2
+    setCount: int = 3
+    date: str = ''
+    createdAt: int = 0
+
+
+class PlayerRatingEntry(BaseModel):
+    name: str
+    rating: float
+    uncertainty: float
+    volatility: Optional[float] = None
+    won: int = 0
+    lost: int = 0
+    gamesPlayed: int = 0
+    algo: str = 'rc'
+    type: str = 'singles'

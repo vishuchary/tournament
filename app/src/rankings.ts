@@ -122,7 +122,101 @@ export function computeCrossGroupRankings(groups: Group[], format: MatchFormat):
   return all;
 }
 
-export function computePlayerRankings(tournaments: Tournament[]): PlayerRanking[] {
+export interface PlayerStats {
+  name: string;
+  overall: { matchesPlayed: number; matchWins: number; gameWins: number; gameLosses: number; pointsFor: number; pointsAgainst: number };
+  singles: { matchesPlayed: number; matchWins: number; gameWins: number; gameLosses: number; pointsFor: number; pointsAgainst: number };
+  doubles: { matchesPlayed: number; matchWins: number; gameWins: number; gameLosses: number; pointsFor: number; pointsAgainst: number };
+  tournaments: { id: string; name: string; date?: string; matchType?: string; result: 'winner' | 'runner-up' | null }[];
+}
+
+function blankBucket() {
+  return { matchesPlayed: 0, matchWins: 0, gameWins: 0, gameLosses: 0, pointsFor: 0, pointsAgainst: 0 };
+}
+
+export function computePlayerStats(playerName: string, tournaments: Tournament[]): PlayerStats {
+  const stats: PlayerStats = {
+    name: playerName,
+    overall: blankBucket(),
+    singles: blankBucket(),
+    doubles: blankBucket(),
+    tournaments: [],
+  };
+
+  for (const t of tournaments) {
+    const bucket = t.matchType === 'singles' ? stats.singles : stats.doubles;
+    let appearedInTournament = false;
+    let result: 'winner' | 'runner-up' | null = null;
+
+    for (const level of t.levels) {
+      for (const group of level.groups) {
+        const teamMap = new Map(group.teams.map(tm => [tm.id, tm]));
+        for (const match of group.matches) {
+          if (!match.completed) continue;
+          const team1 = teamMap.get(match.team1Id);
+          const team2 = teamMap.get(match.team2Id);
+          const myTeam = [team1, team2].find(tm => tm?.players.includes(playerName));
+          if (!myTeam) continue;
+          appearedInTournament = true;
+          const isTeam1 = myTeam.id === match.team1Id;
+          let gw = 0, gl = 0, pf = 0, pa = 0;
+          for (const game of match.games) {
+            const my = isTeam1 ? game.team1Score : game.team2Score;
+            const opp = isTeam1 ? game.team2Score : game.team1Score;
+            pf += my; pa += opp;
+            const w = gameWinner(game.team1Score, game.team2Score);
+            const iWon = isTeam1 ? w === 'team1' : w === 'team2';
+            if (iWon) gw++; else if (w) gl++;
+          }
+          const mw = gw > gl ? 1 : 0;
+          bucket.matchesPlayed++; stats.overall.matchesPlayed++;
+          bucket.matchWins += mw; stats.overall.matchWins += mw;
+          bucket.gameWins += gw; stats.overall.gameWins += gw;
+          bucket.gameLosses += gl; stats.overall.gameLosses += gl;
+          bucket.pointsFor += pf; stats.overall.pointsFor += pf;
+          bucket.pointsAgainst += pa; stats.overall.pointsAgainst += pa;
+        }
+      }
+    }
+
+    const lastLevel = t.levels[t.levels.length - 1];
+    if (lastLevel) {
+      const allTeams = lastLevel.groups.flatMap(g => g.teams);
+      const isFinals = lastLevel.groups.length === 1 && lastLevel.groups[0].teams.length === 2;
+      let winnerTeamId: string | null = null;
+      let runnerUpTeamId: string | null = null;
+      if (isFinals && lastLevel.groups[0].matches[0]?.completed) {
+        const fm = lastLevel.groups[0].matches[0];
+        let t1w = 0, t2w = 0, pd = 0;
+        for (const g of fm.games) {
+          const w = gameWinner(g.team1Score, g.team2Score);
+          if (w === 'team1') t1w++; else if (w === 'team2') t2w++;
+          pd += g.team1Score - g.team2Score;
+        }
+        const t1Wins = t1w !== t2w ? t1w > t2w : pd > 0;
+        winnerTeamId = t1Wins ? fm.team1Id : fm.team2Id;
+        runnerUpTeamId = t1Wins ? fm.team2Id : fm.team1Id;
+      } else if (!isFinals) {
+        const st = computeCrossGroupRankings(lastLevel.groups, t.format);
+        winnerTeamId = st[0]?.team.id ?? null;
+        runnerUpTeamId = st[1]?.team.id ?? null;
+      }
+      const winnerTeam = allTeams.find(tm => tm.id === winnerTeamId);
+      const runnerUpTeam = allTeams.find(tm => tm.id === runnerUpTeamId);
+      if (winnerTeam?.players.includes(playerName)) result = 'winner';
+      else if (runnerUpTeam?.players.includes(playerName)) result = 'runner-up';
+    }
+
+    if (appearedInTournament) {
+      stats.tournaments.push({ id: t.id, name: t.name, date: t.date, matchType: t.matchType, result });
+    }
+  }
+
+  return stats;
+}
+
+export function computePlayerRankings(tournaments: Tournament[], matchType?: 'singles' | 'doubles'): PlayerRanking[] {
+  const filtered = matchType ? tournaments.filter(t => t.matchType === matchType) : tournaments;
   const map = new Map<string, PlayerRanking>();
 
   function get(name: string): PlayerRanking {
@@ -133,7 +227,7 @@ export function computePlayerRankings(tournaments: Tournament[]): PlayerRanking[
     return map.get(name)!;
   }
 
-  for (const t of tournaments) {
+  for (const t of filtered) {
     // 1. Level participation: +2 per level per player
     for (const level of t.levels) {
       const levelPlayers = new Set<string>();
@@ -246,3 +340,4 @@ export function generateMatches(teams: Team[]): { team1Id: string; team2Id: stri
   }
   return pairs;
 }
+
