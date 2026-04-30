@@ -13,6 +13,7 @@ import TournamentSetup from './components/TournamentSetup';
 import TournamentView from './components/TournamentView';
 import PlayersScreen from './components/PlayersScreen';
 import PlayerStatsScreen from './components/PlayerStatsScreen';
+import CompetitiveScreen from './components/CompetitiveScreen';
 import RatingsScreen from './components/RatingsScreen';
 import AdminLogin from './components/AdminLogin';
 import ImportCSV from './components/ImportCSV';
@@ -25,6 +26,7 @@ type View =
   | { type: 'tournament'; id: string }
   | { type: 'players' }
   | { type: 'playerStats'; name: string; from: 'ratings' }
+  | { type: 'competitive' }
   | { type: 'ratings' };
 
 function getTournamentStatus(t: Tournament): 'not-started' | 'in-progress' | 'completed' {
@@ -187,17 +189,27 @@ export default function App() {
     );
   }
 
-  if (view.type === 'ratings') {
+  if (view.type === 'competitive') {
     return (
-      <RatingsScreen
+      <CompetitiveScreen
         games={baselineGames}
-        ratings={baselineRatings}
-        algo={algo}
         players={players}
         isAdmin={isAdmin}
         onBack={() => setView({ type: 'home' })}
-        onAlgoChange={handleAlgoChange}
         onDataChange={handleBaselineDataChange}
+      />
+    );
+  }
+
+  if (view.type === 'ratings') {
+    return (
+      <RatingsScreen
+        ratings={baselineRatings}
+        algo={algo}
+        isAdmin={isAdmin}
+        onBack={() => setView({ type: 'home' })}
+        onAlgoChange={handleAlgoChange}
+        onRecompute={handleBaselineDataChange}
         onPlayerClick={name => setView({ type: 'playerStats', name, from: 'ratings' })}
       />
     );
@@ -294,36 +306,63 @@ export default function App() {
           </div>
         </div>
 
-        {tournaments.length === 0 ? (
-          <div className="text-center py-20 text-gray-400">
-            <div className="text-6xl mb-4">🏓</div>
-            <p className="text-xl">No tournaments yet</p>
-            <p className="mt-2">{isAdmin ? 'Create your first tournament to get started' : 'Login as admin to create tournaments'}</p>
-          </div>
-        ) : (
-          <div className="space-y-8">
-            {inProgress.length > 0 && (
-              <section>
-                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">In Progress</h2>
-                <div className="grid gap-3">
-                  {inProgress.map(t => (
-                    <TournamentCard key={t.id} t={t} onClick={() => setView({ type: 'tournament', id: t.id })} />
-                  ))}
+        <div className="space-y-8">
+          {/* Competitive — always live */}
+          <section>
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Competitive</h2>
+            <div
+              onClick={() => setView({ type: 'competitive' })}
+              className="bg-white rounded-xl border border-blue-300 p-5 cursor-pointer hover:shadow-sm hover:border-blue-400 transition-all"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <h2 className="text-lg font-semibold text-gray-900">Competitive Play</h2>
+                    <span className="shrink-0 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Live</span>
+                  </div>
+                  <p className="text-sm text-gray-500">
+                    Open play · Singles &amp; Doubles &middot;{' '}
+                    {baselineGames.length > 0 ? `${baselineGames.length} game${baselineGames.length !== 1 ? 's' : ''} recorded` : 'No games yet'}
+                  </p>
                 </div>
-              </section>
-            )}
-            {history.length > 0 && (
-              <section>
-                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">History</h2>
-                <div className="grid gap-3">
-                  {history.map(t => (
-                    <TournamentCard key={t.id} t={t} onClick={() => setView({ type: 'tournament', id: t.id })} />
-                  ))}
-                </div>
-              </section>
-            )}
-          </div>
-        )}
+                <span className="text-gray-400 text-xl ml-4">&rsaquo;</span>
+              </div>
+            </div>
+          </section>
+
+          {/* Tournaments */}
+          {tournaments.length === 0 && inProgress.length === 0 ? (
+            isAdmin ? (
+              <div className="text-center py-12 text-gray-400">
+                <p className="text-xl">No tournaments yet</p>
+                <p className="mt-2 text-sm">Create your first tournament to get started</p>
+              </div>
+            ) : null
+          ) : (
+            <>
+              {inProgress.length > 0 && (
+                <section>
+                  <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Tournaments · In Progress</h2>
+                  <div className="grid gap-3">
+                    {inProgress.map(t => (
+                      <TournamentCard key={t.id} t={t} onClick={() => setView({ type: 'tournament', id: t.id })} />
+                    ))}
+                  </div>
+                </section>
+              )}
+              {history.length > 0 && (
+                <section>
+                  <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Tournaments · History</h2>
+                  <div className="grid gap-3">
+                    {history.map(t => (
+                      <TournamentCard key={t.id} t={t} onClick={() => setView({ type: 'tournament', id: t.id })} />
+                    ))}
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
