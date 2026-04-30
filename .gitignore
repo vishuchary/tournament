@@ -1,0 +1,4 @@
+.DS_Store
+*.local
+backend/.env.production
+backend/.env.local
