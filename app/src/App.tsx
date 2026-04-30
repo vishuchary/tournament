@@ -8,6 +8,7 @@ import TournamentSetup from './components/TournamentSetup';
 import TournamentView from './components/TournamentView';
 import PlayersScreen from './components/PlayersScreen';
 import RankingsScreen from './components/RankingsScreen';
+import PlayerStatsScreen from './components/PlayerStatsScreen';
 import AdminLogin from './components/AdminLogin';
 import ImportCSV from './components/ImportCSV';
 import './index.css';
@@ -18,7 +19,8 @@ type View =
   | { type: 'import' }
   | { type: 'tournament'; id: string }
   | { type: 'players' }
-  | { type: 'rankings' };
+  | { type: 'rankings' }
+  | { type: 'playerStats'; name: string };
 
 function getTournamentStatus(t: Tournament): 'not-started' | 'in-progress' | 'completed' {
   const allMatches = t.levels.flatMap(l => l.groups.flatMap(g => g.matches));
@@ -165,7 +167,26 @@ export default function App() {
   }
 
   if (view.type === 'rankings') {
-    return <RankingsScreen rankings={rankings} isAdmin={isAdmin} onBack={() => setView({ type: 'home' })} onRecompute={() => recomputeRankings(tournaments)} />;
+    return (
+      <RankingsScreen
+        rankings={rankings}
+        tournaments={tournaments}
+        isAdmin={isAdmin}
+        onBack={() => setView({ type: 'home' })}
+        onRecompute={() => recomputeRankings(tournaments)}
+        onPlayerClick={name => setView({ type: 'playerStats', name })}
+      />
+    );
+  }
+
+  if (view.type === 'playerStats') {
+    return (
+      <PlayerStatsScreen
+        playerName={view.name}
+        tournaments={tournaments}
+        onBack={() => setView({ type: 'rankings' })}
+      />
+    );
   }
 
   if (view.type === 'tournament') {
