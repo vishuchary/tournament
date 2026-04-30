@@ -1,10 +1,13 @@
-import { ref, set, remove, onValue, off } from 'firebase/database';
+import {
+  collection, doc, setDoc, deleteDoc,
+  onSnapshot, query, orderBy, writeBatch,
+} from 'firebase/firestore';
 import { db } from './firebase';
 import type { Tournament, TournamentLevel, Group, Match, Player } from './types';
 import type { PlayerRanking } from './rankings';
 
-// Firebase drops empty arrays and converts arrays to objects with numeric keys.
-// This normalises them back to proper JS arrays on read.
+// Firestore stores arrays natively, but migrated RTDB data may have
+// the object-with-numeric-keys shape. Keep toArray as a safeguard.
 function toArray<T>(val: unknown): T[] {
   if (!val) return [];
   if (Array.isArray(val)) return val as T[];
@@ -26,7 +29,6 @@ function normalizeGroup(g: any): Group {
 }
 
 function normalizeTournament(raw: any): Tournament {
-  // Old format: groups stored directly on tournament (before multi-level support)
   if (raw.groups && !raw.levels) {
     return {
       id: raw.id,
@@ -41,7 +43,6 @@ function normalizeTournament(raw: any): Tournament {
       }],
     };
   }
-
   return {
     ...raw,
     levels: toArray<TournamentLevel>(raw.levels).map((level: any) => ({
@@ -52,47 +53,39 @@ function normalizeTournament(raw: any): Tournament {
 }
 
 export function subscribeTournaments(callback: (tournaments: Tournament[]) => void): () => void {
-  const tournamentsRef = ref(db, 'tournaments');
-  const listener = onValue(tournamentsRef, (snapshot) => {
-    const data = snapshot.val();
-    if (!data) { callback([]); return; }
-    const list = (Object.values(data) as Tournament[]).map(normalizeTournament);
-    list.sort((a, b) => b.createdAt - a.createdAt);
+  const q = query(collection(db, 'tournaments'), orderBy('createdAt', 'desc'));
+  return onSnapshot(q, snapshot => {
+    const list = snapshot.docs.map(d => normalizeTournament({ id: d.id, ...d.data() }));
     callback(list);
   });
-  return () => off(tournamentsRef, 'value', listener);
 }
 
 export function saveTournament(t: Tournament): Promise<void> {
-  return set(ref(db, `tournaments/${t.id}`), t)
-    .catch(err => console.error('Firebase save failed:', err));
+  return setDoc(doc(db, 'tournaments', t.id), t)
+    .catch(err => console.error('Firestore save failed:', err));
 }
 
 export function deleteTournament(id: string): Promise<void> {
-  return remove(ref(db, `tournaments/${id}`))
-    .catch(err => console.error('Firebase delete failed:', err));
+  return deleteDoc(doc(db, 'tournaments', id))
+    .catch(err => console.error('Firestore delete failed:', err));
 }
 
 export function subscribePlayers(callback: (players: Player[]) => void): () => void {
-  const playersRef = ref(db, 'players');
-  const listener = onValue(playersRef, (snapshot) => {
-    const data = snapshot.val();
-    if (!data) { callback([]); return; }
-    const list = Object.values(data) as Player[];
-    list.sort((a, b) => a.name.localeCompare(b.name));
+  const q = query(collection(db, 'players'), orderBy('name'));
+  return onSnapshot(q, snapshot => {
+    const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Player));
     callback(list);
   });
-  return () => off(playersRef, 'value', listener);
 }
 
 export function savePlayer(p: Player): Promise<void> {
-  return set(ref(db, `players/${p.id}`), p)
-    .catch(err => console.error('Firebase save player failed:', err));
+  return setDoc(doc(db, 'players', p.id), p)
+    .catch(err => console.error('Firestore save player failed:', err));
 }
 
 export function deletePlayer(id: string): Promise<void> {
-  return remove(ref(db, `players/${id}`))
-    .catch(err => console.error('Firebase delete player failed:', err));
+  return deleteDoc(doc(db, 'players', id))
+    .catch(err => console.error('Firestore delete player failed:', err));
 }
 
 function sanitizeKey(name: string): string {
@@ -100,19 +93,18 @@ function sanitizeKey(name: string): string {
 }
 
 export function saveRankings(rankings: PlayerRanking[]): Promise<void> {
-  const obj = Object.fromEntries(rankings.map(r => [sanitizeKey(r.name), r]));
-  return set(ref(db, 'rankings'), obj)
-    .catch(err => console.error('Firebase save rankings failed:', err));
+  const batch = writeBatch(db);
+  rankings.forEach(r => {
+    batch.set(doc(db, 'rankings', sanitizeKey(r.name)), r);
+  });
+  return batch.commit()
+    .catch(err => console.error('Firestore save rankings failed:', err));
 }
 
 export function subscribeRankings(callback: (rankings: PlayerRanking[]) => void): () => void {
-  const rankingsRef = ref(db, 'rankings');
-  const listener = onValue(rankingsRef, (snapshot) => {
-    const data = snapshot.val();
-    if (!data) { callback([]); return; }
-    const list = Object.values(data) as PlayerRanking[];
-    list.sort((a, b) => b.points !== a.points ? b.points - a.points : b.gameWins - a.gameWins);
+  const q = query(collection(db, 'rankings'), orderBy('points', 'desc'));
+  return onSnapshot(q, snapshot => {
+    const list = snapshot.docs.map(d => d.data() as PlayerRanking);
     callback(list);
   });
-  return () => off(rankingsRef, 'value', listener);
 }
