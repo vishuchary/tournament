@@ -3,7 +3,7 @@ import {
   onSnapshot, query, orderBy,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { Tournament, TournamentLevel, Group, Match, Player, BaselineGame, PlayerRatingEntry } from './types';
+import type { Tournament, TournamentLevel, Group, Match, Player, PlayerRatingEntry } from './types';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'https://backend-five-gules-97.vercel.app';
 
@@ -60,13 +60,25 @@ function normalizeTournament(raw: any): Tournament {
 // ---------------------------------------------------------------------------
 
 export async function triggerBaselineRatingsRecompute(token: string): Promise<void> {
-  const res = await fetch(`${BACKEND_URL}/baseline/ratings/recompute`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    throw new Error(`Recompute failed (${res.status}): ${text}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45000);
+  try {
+    const res = await fetch(`${BACKEND_URL}/baseline/ratings/recompute`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      throw new Error(`Backend error ${res.status}: ${text}`);
+    }
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('Recompute timed out (>45s) — backend may be overloaded');
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -112,27 +124,6 @@ export function savePlayer(p: Player): Promise<void> {
 export function deletePlayer(id: string): Promise<void> {
   return deleteDoc(doc(db, 'players', id))
     .catch(err => console.error('Firestore delete player failed:', err));
-}
-
-// ---------------------------------------------------------------------------
-// Baseline games
-// ---------------------------------------------------------------------------
-
-export function subscribeBaselineGames(callback: (games: BaselineGame[]) => void): () => void {
-  const q = query(collection(db, 'baseline_games'), orderBy('createdAt', 'desc'));
-  return onSnapshot(q, snapshot => {
-    callback(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as BaselineGame)));
-  });
-}
-
-export function saveBaselineGame(g: BaselineGame): Promise<void> {
-  return setDoc(doc(db, 'baseline_games', g.id), g)
-    .catch(err => console.error('Firestore save baseline game failed:', err));
-}
-
-export function deleteBaselineGame(id: string): Promise<void> {
-  return deleteDoc(doc(db, 'baseline_games', id))
-    .catch(err => console.error('Firestore delete baseline game failed:', err));
 }
 
 // ---------------------------------------------------------------------------

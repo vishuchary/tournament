@@ -82,7 +82,7 @@ function RatingsTab({
         );
       })}
       <p className="text-xs text-center text-gray-400 pt-2 pb-2">
-        {algo === 'rc' ? 'Ratings Central · ±SD = uncertainty' : 'Glicko-2 · ±RD = uncertainty · σ = volatility'} · Established &lt; ±80
+        {algo === 'rc' ? 'Ratings Central · ±SD = uncertainty' : 'Glicko-2 · ±RD = uncertainty · σ = volatility'} · Based on tournament matches
       </p>
     </div>
   );

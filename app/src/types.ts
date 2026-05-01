@@ -53,18 +53,6 @@ export interface Tournament {
   date?: string; // YYYY-MM-DD, the day the tournament is played
 }
 
-export interface BaselineGame {
-  id: string;
-  type: 'singles' | 'doubles';
-  team1: string[];   // player name(s)
-  team2: string[];   // player name(s)
-  games: Game[];     // per-game scores
-  winner: 1 | 2;
-  setCount: number;  // number of games played (e.g. 3 = best of 3)
-  date: string;      // YYYY-MM-DD
-  createdAt: number;
-}
-
 
 export interface PlayerRatingEntry {
   name: string;

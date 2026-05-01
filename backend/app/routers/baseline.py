@@ -81,25 +81,28 @@ def _tournament_matches_as_games(db) -> list[BaselineGame]:
 
 @router.post('/ratings/recompute', response_model=dict, dependencies=[Depends(verify_token)])
 def recompute_baseline_ratings():
-    db = get_firestore()
-    competitive_games = [BaselineGame(**doc.to_dict()) for doc in db.collection('baseline_games').stream()]
-    tournament_games = _tournament_matches_as_games(db)
-    games = competitive_games + tournament_games
+    try:
+        db = get_firestore()
+        games = _tournament_matches_as_games(db)
 
-    batch = db.batch()
-    for gtype in ('singles', 'doubles'):
-        for algo in ('rc', 'glicko2'):
-            ratings: list[PlayerRatingEntry] = (
-                compute_rc_ratings(games, gtype) if algo == 'rc'
-                else compute_glicko2_ratings(games, gtype)
-            )
-            for r in ratings:
-                key = _sanitize(r.name) + f'_{gtype}_{algo}'
-                ref = db.collection('baseline_ratings').document(key)
-                data = r.model_dump()
-                data['algo'] = algo
-                data['type'] = gtype
-                batch.set(ref, data)
-    batch.commit()
+        batch = db.batch()
+        for gtype in ('singles', 'doubles'):
+            for algo in ('rc', 'glicko2'):
+                ratings: list[PlayerRatingEntry] = (
+                    compute_rc_ratings(games, gtype) if algo == 'rc'
+                    else compute_glicko2_ratings(games, gtype)
+                )
+                for r in ratings:
+                    key = _sanitize(r.name) + f'_{gtype}_{algo}'
+                    ref = db.collection('baseline_ratings').document(key)
+                    data = r.model_dump()
+                    data['algo'] = algo
+                    data['type'] = gtype
+                    batch.set(ref, data)
+        batch.commit()
 
-    return {'status': 'ok', 'competitive': len(competitive_games), 'tournament': len(tournament_games)}
+        return {'status': 'ok', 'tournament_games': len(games)}
+    except Exception as e:
+        import traceback
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=f'{e}\n{traceback.format_exc()}')

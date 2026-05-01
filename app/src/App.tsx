@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { auth } from './firebase';
-import type { Tournament, Player, BaselineGame, PlayerRatingEntry } from './types';
+import type { Tournament, Player, PlayerRatingEntry } from './types';
 import {
   subscribeTournaments, saveTournament, deleteTournament,
-  subscribePlayers, subscribeBaselineGames,
+  subscribePlayers,
   subscribeBaselineRatings, subscribeAlgoSetting, saveAlgoSetting,
   triggerBaselineRatingsRecompute,
   type RatingAlgo,
@@ -13,7 +13,6 @@ import TournamentSetup from './components/TournamentSetup';
 import TournamentView from './components/TournamentView';
 import PlayersScreen from './components/PlayersScreen';
 import PlayerStatsScreen from './components/PlayerStatsScreen';
-import CompetitiveScreen from './components/CompetitiveScreen';
 import RatingsScreen from './components/RatingsScreen';
 import AdminLogin from './components/AdminLogin';
 import ImportCSV from './components/ImportCSV';
@@ -26,7 +25,6 @@ type View =
   | { type: 'tournament'; id: string }
   | { type: 'players' }
   | { type: 'playerStats'; name: string; from: 'ratings' }
-  | { type: 'competitive' }
   | { type: 'ratings' };
 
 function getTournamentStatus(t: Tournament): 'not-started' | 'in-progress' | 'completed' {
@@ -88,7 +86,6 @@ function TournamentCard({ t, onClick }: { t: Tournament; onClick: () => void }) 
 export default function App() {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
-  const [baselineGames, setBaselineGames] = useState<BaselineGame[]>([]);
   const [baselineRatings, setBaselineRatings] = useState<PlayerRatingEntry[]>([]);
   const [algo, setAlgo] = useState<RatingAlgo>('rc');
   const [view, setView] = useState<View>({ type: 'home' });
@@ -113,13 +110,11 @@ export default function App() {
       }
     });
     const unsubscribePlayers = subscribePlayers(setPlayers);
-    const unsubscribeBaseline = subscribeBaselineGames(setBaselineGames);
     const unsubscribeBaselineRatings = subscribeBaselineRatings(setBaselineRatings);
     const unsubscribeAlgo = subscribeAlgoSetting(setAlgo);
     return () => {
       unsubscribeTournaments();
       unsubscribePlayers();
-      unsubscribeBaseline();
       unsubscribeBaselineRatings();
       unsubscribeAlgo();
     };
@@ -149,7 +144,7 @@ export default function App() {
     await saveAlgoSetting(newAlgo);
   }
 
-  async function handleBaselineDataChange() {
+  async function handleRecompute() {
     const token = await getToken();
     if (token) await triggerBaselineRatingsRecompute(token);
   }
@@ -189,18 +184,6 @@ export default function App() {
     );
   }
 
-  if (view.type === 'competitive') {
-    return (
-      <CompetitiveScreen
-        games={baselineGames}
-        players={players}
-        isAdmin={isAdmin}
-        onBack={() => setView({ type: 'home' })}
-        onDataChange={handleBaselineDataChange}
-      />
-    );
-  }
-
   if (view.type === 'ratings') {
     return (
       <RatingsScreen
@@ -209,7 +192,7 @@ export default function App() {
         isAdmin={isAdmin}
         onBack={() => setView({ type: 'home' })}
         onAlgoChange={handleAlgoChange}
-        onRecompute={handleBaselineDataChange}
+        onRecompute={handleRecompute}
         onPlayerClick={name => setView({ type: 'playerStats', name, from: 'ratings' })}
       />
     );
@@ -307,29 +290,6 @@ export default function App() {
         </div>
 
         <div className="space-y-8">
-          {/* Competitive — always live */}
-          <section>
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Competitive</h2>
-            <div
-              onClick={() => setView({ type: 'competitive' })}
-              className="bg-white rounded-xl border border-blue-300 p-5 cursor-pointer hover:shadow-sm hover:border-blue-400 transition-all"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h2 className="text-lg font-semibold text-gray-900">Competitive Play</h2>
-                    <span className="shrink-0 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Live</span>
-                  </div>
-                  <p className="text-sm text-gray-500">
-                    Open play · Singles &amp; Doubles &middot;{' '}
-                    {baselineGames.length > 0 ? `${baselineGames.length} game${baselineGames.length !== 1 ? 's' : ''} recorded` : 'No games yet'}
-                  </p>
-                </div>
-                <span className="text-gray-400 text-xl ml-4">&rsaquo;</span>
-              </div>
-            </div>
-          </section>
-
           {/* Tournaments */}
           {tournaments.length === 0 && inProgress.length === 0 ? (
             isAdmin ? (
