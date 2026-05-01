@@ -126,7 +126,31 @@ function blankBucket() {
   return { matchesPlayed: 0, matchWins: 0, gameWins: 0, gameLosses: 0, pointsFor: 0, pointsAgainst: 0 };
 }
 
-export function computePlayerStats(playerName: string, tournaments: Tournament[]): PlayerStats {
+import type { CompetitiveMatch } from './types';
+
+function accumulateGame(
+  game: { team1Score: number; team2Score: number },
+  isTeam1: boolean,
+  matchWon: boolean,
+  bucket: PlayerStats['overall'],
+  overall: PlayerStats['overall'],
+) {
+  const my = isTeam1 ? game.team1Score : game.team2Score;
+  const opp = isTeam1 ? game.team2Score : game.team1Score;
+  const w = gameWinner(game.team1Score, game.team2Score);
+  const iWon = isTeam1 ? w === 'team1' : w === 'team2';
+  bucket.pointsFor += my; overall.pointsFor += my;
+  bucket.pointsAgainst += opp; overall.pointsAgainst += opp;
+  if (iWon) { bucket.gameWins++; overall.gameWins++; }
+  else if (w) { bucket.gameLosses++; overall.gameLosses++; }
+  void matchWon;
+}
+
+export function computePlayerStats(
+  playerName: string,
+  tournaments: Tournament[],
+  competitiveMatches: CompetitiveMatch[] = [],
+): PlayerStats {
   const stats: PlayerStats = {
     name: playerName,
     overall: blankBucket(),
@@ -136,7 +160,6 @@ export function computePlayerStats(playerName: string, tournaments: Tournament[]
   };
 
   for (const t of tournaments) {
-    const bucket = t.matchType === 'singles' ? stats.singles : stats.doubles;
     let appearedInTournament = false;
     let result: 'winner' | 'runner-up' | null = null;
 
@@ -151,22 +174,22 @@ export function computePlayerStats(playerName: string, tournaments: Tournament[]
           if (!myTeam) continue;
           appearedInTournament = true;
           const isTeam1 = myTeam.id === match.team1Id;
-          let gw = 0, gl = 0, pf = 0, pa = 0;
+          // Use the match type from the team type field if available, else tournament default
+          const mtype = myTeam.type === 'singles' ? 'singles' : (t.matchType ?? 'doubles');
+          const bucket = mtype === 'singles' ? stats.singles : stats.doubles;
+          // Determine match winner from game scores
+          let gw = 0, gl = 0;
           for (const game of match.games) {
-            const my = isTeam1 ? game.team1Score : game.team2Score;
-            const opp = isTeam1 ? game.team2Score : game.team1Score;
-            pf += my; pa += opp;
             const w = gameWinner(game.team1Score, game.team2Score);
             const iWon = isTeam1 ? w === 'team1' : w === 'team2';
             if (iWon) gw++; else if (w) gl++;
           }
-          const mw = gw > gl ? 1 : 0;
+          const matchWon = gw > gl;
           bucket.matchesPlayed++; stats.overall.matchesPlayed++;
-          bucket.matchWins += mw; stats.overall.matchWins += mw;
-          bucket.gameWins += gw; stats.overall.gameWins += gw;
-          bucket.gameLosses += gl; stats.overall.gameLosses += gl;
-          bucket.pointsFor += pf; stats.overall.pointsFor += pf;
-          bucket.pointsAgainst += pa; stats.overall.pointsAgainst += pa;
+          bucket.matchWins += matchWon ? 1 : 0; stats.overall.matchWins += matchWon ? 1 : 0;
+          for (const game of match.games) {
+            accumulateGame(game, isTeam1, matchWon, bucket, stats.overall);
+          }
         }
       }
     }
@@ -201,6 +224,20 @@ export function computePlayerStats(playerName: string, tournaments: Tournament[]
 
     if (appearedInTournament) {
       stats.tournaments.push({ id: t.id, name: t.name, date: t.date, matchType: t.matchType, result });
+    }
+  }
+
+  // Competitive matches (singles and doubles)
+  for (const m of competitiveMatches) {
+    const isTeam1 = m.team1.includes(playerName);
+    const isTeam2 = m.team2.includes(playerName);
+    if (!isTeam1 && !isTeam2) continue;
+    const bucket = m.type === 'singles' ? stats.singles : stats.doubles;
+    const matchWon = isTeam1 ? m.winner === 1 : m.winner === 2;
+    bucket.matchesPlayed++; stats.overall.matchesPlayed++;
+    bucket.matchWins += matchWon ? 1 : 0; stats.overall.matchWins += matchWon ? 1 : 0;
+    for (const game of m.games) {
+      accumulateGame(game, isTeam1, matchWon, bucket, stats.overall);
     }
   }
 

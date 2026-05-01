@@ -1,9 +1,10 @@
 import { computePlayerStats, type PlayerStats } from '../rankings';
-import type { Tournament } from '../types';
+import type { Tournament, CompetitiveMatch } from '../types';
 
 interface Props {
   playerName: string;
   tournaments: Tournament[];
+  competitiveMatches: CompetitiveMatch[];
   onBack: () => void;
 }
 
@@ -41,8 +42,8 @@ function BucketSection({ label, b }: { label: string; b: PlayerStats['overall'] 
   );
 }
 
-export default function PlayerStatsScreen({ playerName, tournaments, onBack }: Props) {
-  const stats = computePlayerStats(playerName, tournaments);
+export default function PlayerStatsScreen({ playerName, tournaments, competitiveMatches, onBack }: Props) {
+  const stats = computePlayerStats(playerName, tournaments, competitiveMatches);
   const hasSingles = stats.singles.matchesPlayed > 0;
   const hasDoubles = stats.doubles.matchesPlayed > 0;
   const hasBoth = hasSingles && hasDoubles;

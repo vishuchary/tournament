@@ -185,6 +185,7 @@ export default function App() {
       <PlayerStatsScreen
         playerName={view.name}
         tournaments={tournaments}
+        competitiveMatches={competitiveMatches}
         onBack={() => setView({ type: view.from })}
       />
     );
