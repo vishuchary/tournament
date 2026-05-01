@@ -7,7 +7,7 @@ by sequential per-game updates with high initial uncertainty.
 """
 import math
 from itertools import groupby
-from ..models.tournament import BaselineGame, PlayerRatingEntry
+from ..models.tournament import RatingGame, PlayerRatingEntry
 
 # ---------------------------------------------------------------------------
 # Ratings Central
@@ -49,7 +49,7 @@ def _rc_update(rating: float, sd: float, results: list[dict]) -> tuple[float, fl
 
 
 
-def compute_rc_ratings(games: list[BaselineGame], gtype: str) -> list[PlayerRatingEntry]:
+def compute_rc_ratings(games: list[RatingGame], gtype: str) -> list[PlayerRatingEntry]:
     state: dict[str, PlayerRatingEntry] = {}
 
     def get(name: str) -> PlayerRatingEntry:
@@ -192,7 +192,7 @@ def _g2_update(mu: float, phi: float, sigma: float, results: list[dict]) -> tupl
     return new_mu, new_phi, new_sigma
 
 
-def compute_glicko2_ratings(games: list[BaselineGame], gtype: str) -> list[PlayerRatingEntry]:
+def compute_glicko2_ratings(games: list[RatingGame], gtype: str) -> list[PlayerRatingEntry]:
     # state: name → (entry, (mu, phi, sigma))
     state: dict[str, tuple[PlayerRatingEntry, tuple[float, float, float]]] = {}
 

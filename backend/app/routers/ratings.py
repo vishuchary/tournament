@@ -3,7 +3,7 @@ import re
 from fastapi import APIRouter, Depends
 from ..services.firestore_client import get_firestore
 from ..services.ratings_engine import compute_rc_ratings, compute_glicko2_ratings
-from ..models.tournament import BaselineGame, Game, PlayerRatingEntry, Tournament
+from ..models.tournament import RatingGame, Game, PlayerRatingEntry, Tournament
 from ..middleware.auth import verify_token
 
 router = APIRouter(prefix='/ratings', tags=['ratings'])
@@ -92,7 +92,7 @@ def _match_winner(games: list[Game], set_count: int) -> int | None:
     return None
 
 
-def _tournament_matches_as_games(db) -> list[BaselineGame]:
+def _tournament_matches_as_games(db) -> list[RatingGame]:
     result = []
     idx = 0
     for t_doc in db.collection('tournaments').stream():
@@ -116,7 +116,7 @@ def _tournament_matches_as_games(db) -> list[BaselineGame]:
                         gw = _game_winner(game.team1Score, game.team2Score)
                         if gw is None:
                             continue
-                        result.append(BaselineGame(
+                        result.append(RatingGame(
                             id=f't_{t.id}_{match.id}_{idx}',
                             type=gtype,
                             team1=team1_players,
@@ -131,7 +131,7 @@ def _tournament_matches_as_games(db) -> list[BaselineGame]:
     return result
 
 
-def _competitive_matches_as_games(db) -> list[BaselineGame]:
+def _competitive_matches_as_games(db) -> list[RatingGame]:
     result = []
     for doc in db.collection('competitive_matches').stream():
         d = doc.to_dict()
@@ -146,7 +146,7 @@ def _competitive_matches_as_games(db) -> list[BaselineGame]:
                 gw = _game_winner(game.team1Score, game.team2Score)
                 if gw is None:
                     continue
-                result.append(BaselineGame(
+                result.append(RatingGame(
                     id=f'{doc.id}_{i}',
                     type=gtype,
                     team1=team1,
