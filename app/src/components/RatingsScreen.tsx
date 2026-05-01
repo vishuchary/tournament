@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import type { PlayerRatingEntry } from '../types';
 import type { RatingAlgo } from '../store';
+import { buildCombined } from '../rankings';
 
 function confidenceLabel(uncertainty: number): { text: string; color: string } {
   if (uncertainty < 80)  return { text: 'Established', color: 'text-green-600 bg-green-50' };
@@ -8,69 +9,17 @@ function confidenceLabel(uncertainty: number): { text: string; color: string } {
   return { text: 'Unrated', color: 'text-gray-400 bg-gray-100' };
 }
 
-type CombinedEntry = {
-  name: string;
-  rating: number;
-  uncertainty: number;
-  won: number;
-  lost: number;
-  gamesPlayed: number;
-  hasSingles: boolean;
-  hasDoubles: boolean;
-};
-
-function buildCombined(ratings: PlayerRatingEntry[], algo: RatingAlgo): CombinedEntry[] {
-  const map = new Map<string, CombinedEntry>();
-  for (const r of ratings.filter(r => r.algo === algo)) {
-    const cur = map.get(r.name);
-    if (!cur) {
-      map.set(r.name, {
-        name: r.name,
-        rating: r.rating,
-        uncertainty: r.uncertainty,
-        won: r.won,
-        lost: r.lost,
-        gamesPlayed: r.gamesPlayed,
-        hasSingles: r.type === 'singles',
-        hasDoubles: r.type === 'doubles',
-      });
-    } else {
-      const totalGames = cur.gamesPlayed + r.gamesPlayed;
-      const weightedRating = totalGames > 0
-        ? (cur.rating * cur.gamesPlayed + r.rating * r.gamesPlayed) / totalGames
-        : (cur.rating + r.rating) / 2;
-      const weightedUncertainty = totalGames > 0
-        ? (cur.uncertainty * cur.gamesPlayed + r.uncertainty * r.gamesPlayed) / totalGames
-        : (cur.uncertainty + r.uncertainty) / 2;
-      map.set(r.name, {
-        name: r.name,
-        rating: weightedRating,
-        uncertainty: weightedUncertainty,
-        won: cur.won + r.won,
-        lost: cur.lost + r.lost,
-        gamesPlayed: totalGames,
-        hasSingles: cur.hasSingles || r.type === 'singles',
-        hasDoubles: cur.hasDoubles || r.type === 'doubles',
-      });
-    }
-  }
-  return [...map.values()].sort((a, b) => {
-    if (b.won !== a.won) return b.won - a.won;
-    return b.rating - a.rating;
-  });
-}
-
 function RatingsTab({
-  ratings, type, algo, onPlayerClick,
+  ratings, type, algo, topRankers, onPlayerClick,
 }: {
-  ratings: PlayerRatingEntry[]; type: 'singles' | 'doubles'; algo: RatingAlgo; onPlayerClick?: (name: string) => void;
+  ratings: PlayerRatingEntry[]; type: 'singles' | 'doubles'; algo: RatingAlgo; topRankers: number; onPlayerClick?: (name: string) => void;
 }) {
   const filtered = useMemo(
     () => ratings.filter(r => r.type === type && r.algo === algo).sort((a, b) => {
       if (b.won !== a.won) return b.won - a.won;
       return b.rating - a.rating;
-    }),
-    [ratings, type, algo],
+    }).slice(0, topRankers),
+    [ratings, type, algo, topRankers],
   );
 
   const MEDAL: Record<number, string> = { 1: '👑', 2: '🥈', 3: '🥉' };
@@ -144,11 +93,11 @@ function RatingsTab({
 }
 
 function CombinedTab({
-  ratings, algo, onPlayerClick,
+  ratings, algo, topRankers, onPlayerClick,
 }: {
-  ratings: PlayerRatingEntry[]; algo: RatingAlgo; onPlayerClick?: (name: string) => void;
+  ratings: PlayerRatingEntry[]; algo: RatingAlgo; topRankers: number; onPlayerClick?: (name: string) => void;
 }) {
-  const combined = useMemo(() => buildCombined(ratings, algo), [ratings, algo]);
+  const combined = useMemo(() => buildCombined(ratings, algo).slice(0, topRankers), [ratings, algo, topRankers]);
 
   const MEDAL: Record<number, string> = { 1: '👑', 2: '🥈', 3: '🥉' };
   const maxRating = combined[0]?.rating ?? 1500;
@@ -219,14 +168,16 @@ function CombinedTab({
 interface Props {
   ratings: PlayerRatingEntry[];
   algo: RatingAlgo;
+  topRankers: number;
   isAdmin: boolean;
   onBack: () => void;
   onAlgoChange: (algo: RatingAlgo) => void;
+  onTopRankersChange: (n: number) => void;
   onRecompute: () => Promise<void>;
   onPlayerClick?: (name: string) => void;
 }
 
-export default function RatingsScreen({ ratings, algo, isAdmin, onBack, onAlgoChange, onRecompute, onPlayerClick }: Props) {
+export default function RatingsScreen({ ratings, algo, topRankers, isAdmin, onBack, onAlgoChange, onTopRankersChange, onRecompute, onPlayerClick }: Props) {
   const [tab, setTab] = useState<'singles' | 'doubles' | 'combined'>('combined');
   const [recomputing, setRecomputing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -272,20 +223,37 @@ export default function RatingsScreen({ ratings, algo, isAdmin, onBack, onAlgoCh
           <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2.5 rounded-xl break-all">{error}</div>
         )}
 
-        {/* Algo toggle — admin only */}
+        {/* Algo toggle + top rankers — admin only */}
         {isAdmin ? (
-          <div className="flex gap-1 bg-gray-100 p-1 rounded-lg mb-4">
-            <button onClick={() => onAlgoChange('rc')}
-              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${algo === 'rc' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-              Ratings Central
-            </button>
-            <button onClick={() => onAlgoChange('glicko2')}
-              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${algo === 'glicko2' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-              Glicko-2
-            </button>
+          <div className="space-y-2 mb-4">
+            <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+              <button onClick={() => onAlgoChange('rc')}
+                className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${algo === 'rc' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                Ratings Central
+              </button>
+              <button onClick={() => onAlgoChange('glicko2')}
+                className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${algo === 'glicko2' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                Glicko-2
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-500 shrink-0">Show top</label>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={topRankers}
+                onChange={e => {
+                  const n = parseInt(e.target.value, 10);
+                  if (!isNaN(n) && n >= 1) onTopRankersChange(n);
+                }}
+                className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-xs text-center outline-none focus:border-blue-400"
+              />
+              <label className="text-xs text-gray-500">rankers</label>
+            </div>
           </div>
         ) : (
-          <p className="text-xs text-gray-400 mb-4 text-right">{algo === 'rc' ? 'Ratings Central' : 'Glicko-2'}</p>
+          <p className="text-xs text-gray-400 mb-4 text-right">{algo === 'rc' ? 'Ratings Central' : 'Glicko-2'} · Top {topRankers}</p>
         )}
 
         {/* Tabs */}
@@ -299,8 +267,8 @@ export default function RatingsScreen({ ratings, algo, isAdmin, onBack, onAlgoCh
         </div>
 
         {tab === 'combined'
-          ? <CombinedTab ratings={ratings} algo={algo} onPlayerClick={onPlayerClick} />
-          : <RatingsTab ratings={ratings} type={tab} algo={algo} onPlayerClick={onPlayerClick} />
+          ? <CombinedTab ratings={ratings} algo={algo} topRankers={topRankers} onPlayerClick={onPlayerClick} />
+          : <RatingsTab ratings={ratings} type={tab} algo={algo} topRankers={topRankers} onPlayerClick={onPlayerClick} />
         }
       </div>
     </div>

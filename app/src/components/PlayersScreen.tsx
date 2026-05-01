@@ -5,6 +5,7 @@ import { savePlayer, deletePlayer, renamePlayer } from '../store';
 interface Props {
   players: Player[];
   isAdmin: boolean;
+  topPlayerNames?: Set<string>;
   onBack: () => void;
   getToken: () => Promise<string>;
   onPlayerClick?: (name: string) => void;
@@ -166,7 +167,7 @@ if (p.sex) parts.push(p.sex.charAt(0).toUpperCase() + p.sex.slice(1));
   return parts.join(' · ');
 }
 
-export default function PlayersScreen({ players, isAdmin, onBack, getToken, onPlayerClick }: Props) {
+export default function PlayersScreen({ players, isAdmin, topPlayerNames, onBack, getToken, onPlayerClick }: Props) {
   const [formState, setFormState] = useState<
     | { mode: 'add' }
     | { mode: 'edit'; player: Player }
@@ -255,10 +256,15 @@ export default function PlayersScreen({ players, isAdmin, onBack, getToken, onPl
             {players.map(p => (
               <div key={p.id} className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
-                  <p
-                    className={`text-sm font-semibold text-gray-900 ${onPlayerClick ? 'cursor-pointer hover:text-blue-600 hover:underline' : ''}`}
-                    onClick={() => onPlayerClick?.(p.name)}
-                  >{p.name}</p>
+                  {(() => {
+                    const clickable = onPlayerClick && (isAdmin || !topPlayerNames || topPlayerNames.has(p.name));
+                    return (
+                      <p
+                        className={`text-sm font-semibold text-gray-900 ${clickable ? 'cursor-pointer hover:text-blue-600 hover:underline' : ''}`}
+                        onClick={() => clickable && onPlayerClick!(p.name)}
+                      >{p.name}</p>
+                    );
+                  })()}
                   {playerSummary(p) && (
                     <p className="text-xs text-gray-400 mt-0.5 truncate">{playerSummary(p)}</p>
                   )}

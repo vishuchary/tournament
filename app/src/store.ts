@@ -186,6 +186,18 @@ export function subscribeAlgoSetting(callback: (algo: RatingAlgo) => void): () =
 }
 
 export function saveAlgoSetting(algo: RatingAlgo): Promise<void> {
-  return setDoc(doc(db, 'settings', 'algo'), { algo })
+  return setDoc(doc(db, 'settings', 'algo'), { algo }, { merge: true })
     .catch(err => console.error('Firestore save algo setting failed:', err));
+}
+
+export function subscribeTopRankers(callback: (n: number) => void): () => void {
+  return onSnapshot(doc(db, 'settings', 'algo'), snap => {
+    const data = snap.data();
+    callback(typeof data?.topRankers === 'number' ? data.topRankers : 10);
+  });
+}
+
+export function saveTopRankers(n: number): Promise<void> {
+  return setDoc(doc(db, 'settings', 'algo'), { topRankers: n }, { merge: true })
+    .catch(err => console.error('Firestore save topRankers failed:', err));
 }

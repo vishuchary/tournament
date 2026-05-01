@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { auth } from './firebase';
 import type { Tournament, Player, PlayerRatingEntry, CompetitiveMatch } from './types';
@@ -6,10 +6,12 @@ import {
   subscribeTournaments, saveTournament, deleteTournament,
   subscribePlayers,
   subscribeBaselineRatings, subscribeAlgoSetting, saveAlgoSetting,
+  subscribeTopRankers, saveTopRankers,
   triggerBaselineRatingsRecompute,
   subscribeCompetitiveMatches,
   type RatingAlgo,
 } from './store';
+import { buildCombined } from './rankings';
 import TournamentSetup from './components/TournamentSetup';
 import TournamentView from './components/TournamentView';
 import PlayersScreen from './components/PlayersScreen';
@@ -90,12 +92,18 @@ export default function App() {
   const [competitiveMatches, setCompetitiveMatches] = useState<CompetitiveMatch[]>([]);
   const [baselineRatings, setBaselineRatings] = useState<PlayerRatingEntry[]>([]);
   const [algo, setAlgo] = useState<RatingAlgo>('rc');
+  const [topRankers, setTopRankers] = useState<number>(10);
   const [view, setView] = useState<View>({ type: 'home' });
   const [user, setUser] = useState<User | null>(null);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const hasAutoNavigated = useRef(false);
 
   const isAdmin = !!user;
+
+  const topPlayerNames = useMemo(
+    () => new Set(buildCombined(baselineRatings, algo).slice(0, topRankers).map(r => r.name)),
+    [baselineRatings, algo, topRankers],
+  );
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, u => setUser(u));
@@ -115,12 +123,14 @@ export default function App() {
     const unsubscribeCompetitive = subscribeCompetitiveMatches(setCompetitiveMatches);
     const unsubscribeBaselineRatings = subscribeBaselineRatings(setBaselineRatings);
     const unsubscribeAlgo = subscribeAlgoSetting(setAlgo);
+    const unsubscribeTopRankers = subscribeTopRankers(setTopRankers);
     return () => {
       unsubscribeTournaments();
       unsubscribePlayers();
       unsubscribeCompetitive();
       unsubscribeBaselineRatings();
       unsubscribeAlgo();
+      unsubscribeTopRankers();
     };
   }, []);
 
@@ -148,6 +158,10 @@ export default function App() {
     await saveAlgoSetting(newAlgo);
   }
 
+  async function handleTopRankersChange(n: number) {
+    await saveTopRankers(n);
+  }
+
   async function handleRecompute() {
     const token = await getToken();
     if (token) await triggerBaselineRatingsRecompute(token);
@@ -166,7 +180,7 @@ export default function App() {
 
 
   if (view.type === 'players') {
-    return <PlayersScreen players={players} isAdmin={isAdmin} onBack={() => setView({ type: 'home' })} getToken={getToken} onPlayerClick={name => setView({ type: 'playerStats', name, from: 'players' })} />;
+    return <PlayersScreen players={players} isAdmin={isAdmin} topPlayerNames={topPlayerNames} onBack={() => setView({ type: 'home' })} getToken={getToken} onPlayerClick={name => setView({ type: 'playerStats', name, from: 'players' })} />;
   }
 
   if (view.type === 'playerStats') {
@@ -197,9 +211,11 @@ export default function App() {
       <RatingsScreen
         ratings={baselineRatings}
         algo={algo}
+        topRankers={topRankers}
         isAdmin={isAdmin}
         onBack={() => setView({ type: 'home' })}
         onAlgoChange={handleAlgoChange}
+        onTopRankersChange={handleTopRankersChange}
         onRecompute={handleRecompute}
         onPlayerClick={name => setView({ type: 'playerStats', name, from: 'ratings' })}
       />

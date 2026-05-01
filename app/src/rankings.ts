@@ -1,4 +1,4 @@
-import type { Group, Match, MatchFormat, Team, TeamStats, Tournament } from './types';
+import type { Group, Match, MatchFormat, Team, TeamStats, Tournament, PlayerRatingEntry } from './types';
 export type { }; // keep module
 
 function shortName(fullName: string): string {
@@ -244,6 +244,58 @@ export function computePlayerStats(
   return stats;
 }
 
+
+export type CombinedEntry = {
+  name: string;
+  rating: number;
+  uncertainty: number;
+  won: number;
+  lost: number;
+  gamesPlayed: number;
+  hasSingles: boolean;
+  hasDoubles: boolean;
+};
+
+export function buildCombined(ratings: PlayerRatingEntry[], algo: string): CombinedEntry[] {
+  const map = new Map<string, CombinedEntry>();
+  for (const r of ratings.filter(r => r.algo === algo)) {
+    const cur = map.get(r.name);
+    if (!cur) {
+      map.set(r.name, {
+        name: r.name,
+        rating: r.rating,
+        uncertainty: r.uncertainty,
+        won: r.won,
+        lost: r.lost,
+        gamesPlayed: r.gamesPlayed,
+        hasSingles: r.type === 'singles',
+        hasDoubles: r.type === 'doubles',
+      });
+    } else {
+      const totalGames = cur.gamesPlayed + r.gamesPlayed;
+      const weightedRating = totalGames > 0
+        ? (cur.rating * cur.gamesPlayed + r.rating * r.gamesPlayed) / totalGames
+        : (cur.rating + r.rating) / 2;
+      const weightedUncertainty = totalGames > 0
+        ? (cur.uncertainty * cur.gamesPlayed + r.uncertainty * r.gamesPlayed) / totalGames
+        : (cur.uncertainty + r.uncertainty) / 2;
+      map.set(r.name, {
+        name: r.name,
+        rating: weightedRating,
+        uncertainty: weightedUncertainty,
+        won: cur.won + r.won,
+        lost: cur.lost + r.lost,
+        gamesPlayed: totalGames,
+        hasSingles: cur.hasSingles || r.type === 'singles',
+        hasDoubles: cur.hasDoubles || r.type === 'doubles',
+      });
+    }
+  }
+  return [...map.values()].sort((a, b) => {
+    if (b.won !== a.won) return b.won - a.won;
+    return b.rating - a.rating;
+  });
+}
 
 export function generateMatches(teams: Team[]): { team1Id: string; team2Id: string }[] {
   const pairs: { team1Id: string; team2Id: string }[] = [];
