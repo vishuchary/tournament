@@ -3,3 +3,4 @@
 backend/.env.production
 backend/.env.local
 /.vercel
+export-import/service-account.json
