@@ -7,6 +7,7 @@ interface Props {
   isAdmin: boolean;
   onBack: () => void;
   getToken: () => Promise<string>;
+  onPlayerClick?: (name: string) => void;
 }
 
 function uid() {
@@ -165,7 +166,7 @@ if (p.sex) parts.push(p.sex.charAt(0).toUpperCase() + p.sex.slice(1));
   return parts.join(' · ');
 }
 
-export default function PlayersScreen({ players, isAdmin, onBack, getToken }: Props) {
+export default function PlayersScreen({ players, isAdmin, onBack, getToken, onPlayerClick }: Props) {
   const [formState, setFormState] = useState<
     | { mode: 'add' }
     | { mode: 'edit'; player: Player }
@@ -254,7 +255,10 @@ export default function PlayersScreen({ players, isAdmin, onBack, getToken }: Pr
             {players.map(p => (
               <div key={p.id} className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-900">{p.name}</p>
+                  <p
+                    className={`text-sm font-semibold text-gray-900 ${onPlayerClick ? 'cursor-pointer hover:text-blue-600 hover:underline' : ''}`}
+                    onClick={() => onPlayerClick?.(p.name)}
+                  >{p.name}</p>
                   {playerSummary(p) && (
                     <p className="text-xs text-gray-400 mt-0.5 truncate">{playerSummary(p)}</p>
                   )}

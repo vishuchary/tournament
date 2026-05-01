@@ -25,7 +25,7 @@ type View =
   | { type: 'tournament'; id: string }
   | { type: 'competitive' }
   | { type: 'players' }
-  | { type: 'playerStats'; name: string; from: 'ratings' }
+  | { type: 'playerStats'; name: string; from: 'ratings' | 'players' }
   | { type: 'ratings' };
 
 function getTournamentStatus(t: Tournament): 'not-started' | 'in-progress' | 'completed' {
@@ -166,7 +166,7 @@ export default function App() {
 
 
   if (view.type === 'players') {
-    return <PlayersScreen players={players} isAdmin={isAdmin} onBack={() => setView({ type: 'home' })} getToken={getToken} />;
+    return <PlayersScreen players={players} isAdmin={isAdmin} onBack={() => setView({ type: 'home' })} getToken={getToken} onPlayerClick={name => setView({ type: 'playerStats', name, from: 'players' })} />;
   }
 
   if (view.type === 'playerStats') {
