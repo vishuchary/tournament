@@ -3,8 +3,7 @@ import {
   onSnapshot, query, orderBy,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { Tournament, TournamentLevel, Group, Match, Player, BaselineGame, PlayerRatingEntry } from './types';
-import type { PlayerRanking } from './rankings';
+import type { Tournament, TournamentLevel, Group, Match, Player, PlayerRatingEntry, CompetitiveMatch } from './types';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'https://backend-five-gules-97.vercel.app';
 
@@ -12,8 +11,6 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'https://backend-five-gu
 // Firestore helpers
 // ---------------------------------------------------------------------------
 
-// Firestore stores arrays natively, but migrated RTDB data may have
-// the object-with-numeric-keys shape. Keep toArray as a safeguard.
 function toArray<T>(val: unknown): T[] {
   if (!val) return [];
   if (Array.isArray(val)) return val as T[];
@@ -59,28 +56,29 @@ function normalizeTournament(raw: any): Tournament {
 }
 
 // ---------------------------------------------------------------------------
-// Backend API calls (admin-only; pass Firebase ID token)
+// Backend API calls (admin-only)
 // ---------------------------------------------------------------------------
 
-export async function triggerRankingsRecompute(token: string): Promise<void> {
-  try {
-    await fetch(`${BACKEND_URL}/rankings/recompute`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-  } catch (err) {
-    console.error('Backend rankings recompute failed:', err);
-  }
-}
-
 export async function triggerBaselineRatingsRecompute(token: string): Promise<void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45000);
   try {
-    await fetch(`${BACKEND_URL}/baseline/ratings/recompute`, {
+    const res = await fetch(`${BACKEND_URL}/baseline/ratings/recompute`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
     });
-  } catch (err) {
-    console.error('Backend baseline ratings recompute failed:', err);
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      throw new Error(`Backend error ${res.status}: ${text}`);
+    }
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('Recompute timed out (>45s) — backend may be overloaded');
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -129,40 +127,28 @@ export function deletePlayer(id: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Tournament rankings (read from Firestore, written by backend)
+// Competitive matches
 // ---------------------------------------------------------------------------
 
-export function subscribeRankings(callback: (rankings: PlayerRanking[]) => void): () => void {
-  const q = query(collection(db, 'rankings'), orderBy('points', 'desc'));
+export function subscribeCompetitiveMatches(callback: (matches: CompetitiveMatch[]) => void): () => void {
+  const q = query(collection(db, 'competitive_matches'), orderBy('createdAt', 'desc'));
   return onSnapshot(q, snapshot => {
-    const list = snapshot.docs.map(d => d.data() as PlayerRanking);
-    callback(list);
+    callback(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as CompetitiveMatch)));
   });
 }
 
-// ---------------------------------------------------------------------------
-// Baseline games
-// ---------------------------------------------------------------------------
-
-export function subscribeBaselineGames(callback: (games: BaselineGame[]) => void): () => void {
-  const q = query(collection(db, 'baseline_games'), orderBy('createdAt', 'desc'));
-  return onSnapshot(q, snapshot => {
-    callback(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as BaselineGame)));
-  });
+export function saveCompetitiveMatch(m: CompetitiveMatch): Promise<void> {
+  return setDoc(doc(db, 'competitive_matches', m.id), m)
+    .catch(err => console.error('Firestore save competitive match failed:', err));
 }
 
-export function saveBaselineGame(g: BaselineGame): Promise<void> {
-  return setDoc(doc(db, 'baseline_games', g.id), g)
-    .catch(err => console.error('Firestore save baseline game failed:', err));
-}
-
-export function deleteBaselineGame(id: string): Promise<void> {
-  return deleteDoc(doc(db, 'baseline_games', id))
-    .catch(err => console.error('Firestore delete baseline game failed:', err));
+export function deleteCompetitiveMatch(id: string): Promise<void> {
+  return deleteDoc(doc(db, 'competitive_matches', id))
+    .catch(err => console.error('Firestore delete competitive match failed:', err));
 }
 
 // ---------------------------------------------------------------------------
-// Baseline ratings (written by backend, read here)
+// Baseline ratings (written by backend Python, read here)
 // ---------------------------------------------------------------------------
 
 export function subscribeBaselineRatings(
@@ -171,4 +157,22 @@ export function subscribeBaselineRatings(
   return onSnapshot(collection(db, 'baseline_ratings'), snapshot => {
     callback(snapshot.docs.map(d => d.data() as PlayerRatingEntry));
   });
+}
+
+// ---------------------------------------------------------------------------
+// Algorithm setting — admin writes, all read
+// ---------------------------------------------------------------------------
+
+export type RatingAlgo = 'rc' | 'glicko2';
+
+export function subscribeAlgoSetting(callback: (algo: RatingAlgo) => void): () => void {
+  return onSnapshot(doc(db, 'settings', 'baseline_algo'), snap => {
+    const data = snap.data();
+    callback((data?.algo as RatingAlgo) ?? 'rc');
+  });
+}
+
+export function saveAlgoSetting(algo: RatingAlgo): Promise<void> {
+  return setDoc(doc(db, 'settings', 'baseline_algo'), { algo })
+    .catch(err => console.error('Firestore save algo setting failed:', err));
 }

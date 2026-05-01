@@ -1,4 +1,5 @@
 import type { Group, Match, MatchFormat, Team, TeamStats, Tournament } from './types';
+export type { }; // keep module
 
 function shortName(fullName: string): string {
   const parts = fullName.trim().split(/\s+/);
@@ -12,15 +13,6 @@ export function teamDisplayName(team: Team): string {
   return players.map(shortName).join('_');
 }
 
-export interface PlayerRanking {
-  name: string;
-  points: number;        // total score
-  participationPts: number; // +2 per level played
-  gameWinPts: number;   // +2 per game won
-  bonusPts: number;     // +2 winner, +1 runner-up per tournament
-  gameWins: number;     // raw game win count
-  matchesPlayed: number;
-}
 
 function gameWinner(s1: number, s2: number): 'team1' | 'team2' | null {
   if (s1 >= 11 && s1 - s2 >= 2) return 'team1';
@@ -215,121 +207,6 @@ export function computePlayerStats(playerName: string, tournaments: Tournament[]
   return stats;
 }
 
-export function computePlayerRankings(tournaments: Tournament[], matchType?: 'singles' | 'doubles'): PlayerRanking[] {
-  const filtered = matchType ? tournaments.filter(t => t.matchType === matchType) : tournaments;
-  const map = new Map<string, PlayerRanking>();
-
-  function get(name: string): PlayerRanking {
-    if (!map.has(name)) map.set(name, {
-      name, points: 0, participationPts: 0, gameWinPts: 0, bonusPts: 0,
-      gameWins: 0, matchesPlayed: 0,
-    });
-    return map.get(name)!;
-  }
-
-  for (const t of filtered) {
-    // 1. Level participation: +2 per level per player
-    for (const level of t.levels) {
-      const levelPlayers = new Set<string>();
-      for (const group of level.groups) {
-        for (const team of group.teams) {
-          for (const name of team.players) {
-            if (name) levelPlayers.add(name);
-          }
-        }
-      }
-      for (const name of levelPlayers) {
-        const s = get(name);
-        s.participationPts += 2;
-        s.points += 2;
-      }
-    }
-
-    // 2. Game wins: +2 per individual game won
-    for (const level of t.levels) {
-      for (const group of level.groups) {
-        const teamMap = new Map(group.teams.map(tm => [tm.id, tm]));
-        for (const match of group.matches) {
-          if (!match.completed || match.games.length === 0) continue;
-
-          const inMatch = new Set<string>();
-          const team1 = teamMap.get(match.team1Id);
-          const team2 = teamMap.get(match.team2Id);
-          for (const name of [...(team1?.players ?? []), ...(team2?.players ?? [])]) {
-            if (name && !inMatch.has(name)) { inMatch.add(name); get(name).matchesPlayed++; }
-          }
-
-          for (const game of match.games) {
-            const w = gameWinner(game.team1Score, game.team2Score);
-            if (!w) continue;
-            const winTeam = teamMap.get(w === 'team1' ? match.team1Id : match.team2Id);
-            for (const name of (winTeam?.players ?? [])) {
-              if (!name) continue;
-              const s = get(name);
-              s.gameWins++;
-              s.gameWinPts += 2;
-              s.points += 2;
-            }
-          }
-        }
-      }
-    }
-
-    // 3. Tournament winner (+2) and runner-up (+1) — based on last level
-    const lastLevel = t.levels[t.levels.length - 1];
-    if (!lastLevel) continue;
-    const lastMatches = lastLevel.groups.flatMap(g => g.matches);
-    if (lastMatches.length === 0 || !lastMatches.every(m => m.completed)) continue;
-
-    let winnerTeamId: string | null = null;
-    let runnerUpTeamId: string | null = null;
-
-    const isFinals = lastLevel.groups.length === 1 && lastLevel.groups[0].teams.length === 2;
-    if (isFinals) {
-      const finalMatch = lastLevel.groups[0].matches[0];
-      if (finalMatch?.completed) {
-        let t1wins = 0, t2wins = 0, pointDiff = 0;
-        for (const g of finalMatch.games) {
-          const w = gameWinner(g.team1Score, g.team2Score);
-          if (w === 'team1') t1wins++;
-          else if (w === 'team2') t2wins++;
-          pointDiff += g.team1Score - g.team2Score;
-        }
-        let team1Wins: boolean;
-        if (t1wins !== t2wins) team1Wins = t1wins > t2wins;
-        else if (pointDiff !== 0) team1Wins = pointDiff > 0;
-        else continue;
-        winnerTeamId = team1Wins ? finalMatch.team1Id : finalMatch.team2Id;
-        runnerUpTeamId = team1Wins ? finalMatch.team2Id : finalMatch.team1Id;
-      }
-    } else {
-      const standings = computeCrossGroupRankings(lastLevel.groups, t.format);
-      winnerTeamId = standings[0]?.team.id ?? null;
-      runnerUpTeamId = standings[1]?.team.id ?? null;
-    }
-
-    const allTeams = lastLevel.groups.flatMap(g => g.teams);
-    const winnerTeam = allTeams.find(tm => tm.id === winnerTeamId);
-    const runnerUpTeam = allTeams.find(tm => tm.id === runnerUpTeamId);
-
-    for (const name of (winnerTeam?.players ?? [])) {
-      if (!name) continue;
-      const s = get(name);
-      s.bonusPts += 2;
-      s.points += 2;
-    }
-    for (const name of (runnerUpTeam?.players ?? [])) {
-      if (!name) continue;
-      const s = get(name);
-      s.bonusPts += 1;
-      s.points += 1;
-    }
-  }
-
-  return Array.from(map.values()).sort((a, b) =>
-    b.points !== a.points ? b.points - a.points : b.gameWins - a.gameWins
-  );
-}
 
 export function generateMatches(teams: Team[]): { team1Id: string; team2Id: string }[] {
   const pairs: { team1Id: string; team2Id: string }[] = [];

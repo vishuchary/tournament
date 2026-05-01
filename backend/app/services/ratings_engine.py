@@ -19,7 +19,9 @@ def _rc_g(sd: float) -> float:
 
 
 def _rc_e(r: float, r_opp: float, sd_opp: float) -> float:
-    return 1.0 / (1 + math.exp(-_rc_g(sd_opp) * RC_ALPHA * (r - r_opp)))
+    x = _rc_g(sd_opp) * RC_ALPHA * (r - r_opp)
+    x = max(-500.0, min(500.0, x))
+    return 1.0 / (1 + math.exp(-x))
 
 
 def _rc_update(rating: float, sd: float, results: list[dict]) -> tuple[float, float]:
@@ -29,6 +31,8 @@ def _rc_update(rating: float, sd: float, results: list[dict]) -> tuple[float, fl
         _rc_g(r['sd_opp']) ** 2 * _rc_e(rating, r['r_opp'], r['sd_opp']) * (1 - _rc_e(rating, r['r_opp'], r['sd_opp']))
         for r in results
     )
+    if d_sq_inv == 0:
+        return rating, sd
     d_sq = 1.0 / d_sq_inv
     delta = RC_ALPHA * d_sq * sum(
         _rc_g(r['sd_opp']) * (r['score'] - _rc_e(rating, r['r_opp'], r['sd_opp']))
@@ -104,7 +108,9 @@ def _g2_g(phi: float) -> float:
 
 
 def _g2_e(mu: float, mu_j: float, phi_j: float) -> float:
-    return 1.0 / (1 + math.exp(-_g2_g(phi_j) * (mu - mu_j)))
+    x = _g2_g(phi_j) * (mu - mu_j)
+    x = max(-500.0, min(500.0, x))
+    return 1.0 / (1 + math.exp(-x))
 
 
 def _g2_new_sigma(phi: float, sigma: float, v: float, delta: float) -> float:

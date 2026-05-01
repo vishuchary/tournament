@@ -1,20 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { auth } from './firebase';
-import type { Tournament, Player, BaselineGame, PlayerRatingEntry } from './types';
+import type { Tournament, Player, PlayerRatingEntry, CompetitiveMatch } from './types';
 import {
   subscribeTournaments, saveTournament, deleteTournament,
-  subscribePlayers, subscribeRankings, subscribeBaselineGames,
-  subscribeBaselineRatings,
-  triggerRankingsRecompute, triggerBaselineRatingsRecompute,
+  subscribePlayers,
+  subscribeBaselineRatings, subscribeAlgoSetting, saveAlgoSetting,
+  triggerBaselineRatingsRecompute,
+  subscribeCompetitiveMatches,
+  type RatingAlgo,
 } from './store';
-import type { PlayerRanking } from './rankings';
 import TournamentSetup from './components/TournamentSetup';
 import TournamentView from './components/TournamentView';
 import PlayersScreen from './components/PlayersScreen';
-import RankingsScreen from './components/RankingsScreen';
 import PlayerStatsScreen from './components/PlayerStatsScreen';
-import BaselineScreen from './components/BaselineScreen';
+import RatingsScreen from './components/RatingsScreen';
+import CompetitiveGamesScreen from './components/CompetitiveGamesScreen';
 import AdminLogin from './components/AdminLogin';
 import ImportCSV from './components/ImportCSV';
 import './index.css';
@@ -24,10 +25,10 @@ type View =
   | { type: 'new' }
   | { type: 'import' }
   | { type: 'tournament'; id: string }
+  | { type: 'competitive' }
   | { type: 'players' }
-  | { type: 'rankings' }
-  | { type: 'playerStats'; name: string }
-  | { type: 'baseline' };
+  | { type: 'playerStats'; name: string; from: 'ratings' }
+  | { type: 'ratings' };
 
 function getTournamentStatus(t: Tournament): 'not-started' | 'in-progress' | 'completed' {
   const allMatches = t.levels.flatMap(l => l.groups.flatMap(g => g.matches));
@@ -88,14 +89,13 @@ function TournamentCard({ t, onClick }: { t: Tournament; onClick: () => void }) 
 export default function App() {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
-  const [rankings, setRankings] = useState<PlayerRanking[]>([]);
-  const [baselineGames, setBaselineGames] = useState<BaselineGame[]>([]);
+  const [competitiveMatches, setCompetitiveMatches] = useState<CompetitiveMatch[]>([]);
   const [baselineRatings, setBaselineRatings] = useState<PlayerRatingEntry[]>([]);
+  const [algo, setAlgo] = useState<RatingAlgo>('rc');
   const [view, setView] = useState<View>({ type: 'home' });
   const [user, setUser] = useState<User | null>(null);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const hasAutoNavigated = useRef(false);
-  const hasInitRankings = useRef(false);
 
   const isAdmin = !!user;
 
@@ -112,21 +112,17 @@ export default function App() {
         const inProgress = list.find(t => getTournamentStatus(t) === 'in-progress');
         if (inProgress) setView({ type: 'tournament', id: inProgress.id });
       }
-      // Backfill rankings on first load for existing data (no admin token needed — uses stored data)
-      if (!hasInitRankings.current && list.length > 0) {
-        hasInitRankings.current = true;
-      }
     });
     const unsubscribePlayers = subscribePlayers(setPlayers);
-    const unsubscribeRankings = subscribeRankings(setRankings);
-    const unsubscribeBaseline = subscribeBaselineGames(setBaselineGames);
+    const unsubscribeCompetitive = subscribeCompetitiveMatches(setCompetitiveMatches);
     const unsubscribeBaselineRatings = subscribeBaselineRatings(setBaselineRatings);
+    const unsubscribeAlgo = subscribeAlgoSetting(setAlgo);
     return () => {
       unsubscribeTournaments();
       unsubscribePlayers();
-      unsubscribeRankings();
-      unsubscribeBaseline();
+      unsubscribeCompetitive();
       unsubscribeBaselineRatings();
+      unsubscribeAlgo();
     };
   }, []);
 
@@ -137,27 +133,26 @@ export default function App() {
   async function handleCreate(t: Tournament) {
     setTournaments(prev => [t, ...prev]);
     await saveTournament(t);
-    const token = await getToken();
-    if (token) triggerRankingsRecompute(token);
     setView({ type: 'tournament', id: t.id });
   }
 
   async function handleUpdate(t: Tournament) {
     setTournaments(prev => prev.map(x => x.id === t.id ? t : x));
     await saveTournament(t);
-    const token = await getToken();
-    if (token) triggerRankingsRecompute(token);
   }
 
   async function handleDelete(id: string) {
     await deleteTournament(id);
-    const token = await getToken();
-    if (token) triggerRankingsRecompute(token);
     setView({ type: 'home' });
   }
 
-  async function handleBaselineChange(token: string) {
-    triggerBaselineRatingsRecompute(token);
+  async function handleAlgoChange(newAlgo: RatingAlgo) {
+    await saveAlgoSetting(newAlgo);
+  }
+
+  async function handleRecompute() {
+    const token = await getToken();
+    if (token) await triggerBaselineRatingsRecompute(token);
   }
 
   if (view.type === 'new') {
@@ -185,38 +180,38 @@ export default function App() {
     return <PlayersScreen players={players} isAdmin={isAdmin} onBack={() => setView({ type: 'home' })} />;
   }
 
-  if (view.type === 'rankings') {
-    return (
-      <RankingsScreen
-        rankings={rankings}
-        tournaments={tournaments}
-        isAdmin={isAdmin}
-        onBack={() => setView({ type: 'home' })}
-        onRecompute={async () => { const token = await getToken(); if (token) triggerRankingsRecompute(token); }}
-        onPlayerClick={name => setView({ type: 'playerStats', name })}
-      />
-    );
-  }
-
   if (view.type === 'playerStats') {
     return (
       <PlayerStatsScreen
         playerName={view.name}
         tournaments={tournaments}
-        onBack={() => setView({ type: 'rankings' })}
+        onBack={() => setView({ type: view.from })}
       />
     );
   }
 
-  if (view.type === 'baseline') {
+  if (view.type === 'competitive') {
     return (
-      <BaselineScreen
-        games={baselineGames}
-        ratings={baselineRatings}
+      <CompetitiveGamesScreen
+        matches={competitiveMatches}
         players={players}
         isAdmin={isAdmin}
         onBack={() => setView({ type: 'home' })}
-        onDataChange={() => getToken().then(t => { if (t) handleBaselineChange(t); })}
+        onDataChange={handleRecompute}
+      />
+    );
+  }
+
+  if (view.type === 'ratings') {
+    return (
+      <RatingsScreen
+        ratings={baselineRatings}
+        algo={algo}
+        isAdmin={isAdmin}
+        onBack={() => setView({ type: 'home' })}
+        onAlgoChange={handleAlgoChange}
+        onRecompute={handleRecompute}
+        onPlayerClick={name => setView({ type: 'playerStats', name, from: 'ratings' })}
       />
     );
   }
@@ -282,13 +277,7 @@ export default function App() {
               </button>
             )}
             <button
-              onClick={() => setView({ type: 'baseline' })}
-              className="bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-lg font-medium hover:border-gray-300 transition-colors text-sm"
-            >
-              Baseline
-            </button>
-            <button
-              onClick={() => setView({ type: 'rankings' })}
+              onClick={() => setView({ type: 'ratings' })}
               className="bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-lg font-medium hover:border-gray-300 transition-colors text-sm"
             >
               Rankings
@@ -318,36 +307,64 @@ export default function App() {
           </div>
         </div>
 
-        {tournaments.length === 0 ? (
-          <div className="text-center py-20 text-gray-400">
-            <div className="text-6xl mb-4">🏓</div>
-            <p className="text-xl">No tournaments yet</p>
-            <p className="mt-2">{isAdmin ? 'Create your first tournament to get started' : 'Login as admin to create tournaments'}</p>
-          </div>
-        ) : (
-          <div className="space-y-8">
-            {inProgress.length > 0 && (
-              <section>
-                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">In Progress</h2>
-                <div className="grid gap-3">
-                  {inProgress.map(t => (
-                    <TournamentCard key={t.id} t={t} onClick={() => setView({ type: 'tournament', id: t.id })} />
-                  ))}
+        <div className="space-y-8">
+          {/* Competitive Games */}
+          <section>
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Competitive Play</h2>
+            <div
+              onClick={() => setView({ type: 'competitive' })}
+              className="bg-white rounded-xl border border-purple-200 hover:border-purple-400 p-5 cursor-pointer hover:shadow-sm transition-all"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <h2 className="text-lg font-semibold text-gray-900">Competitive Matches</h2>
+                    <span className="shrink-0 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">Live</span>
+                  </div>
+                  <p className="text-sm text-gray-500">
+                    {competitiveMatches.length === 0
+                      ? 'No matches recorded yet'
+                      : `${competitiveMatches.length} match${competitiveMatches.length !== 1 ? 'es' : ''} recorded · singles & doubles`}
+                  </p>
                 </div>
-              </section>
-            )}
-            {history.length > 0 && (
-              <section>
-                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">History</h2>
-                <div className="grid gap-3">
-                  {history.map(t => (
-                    <TournamentCard key={t.id} t={t} onClick={() => setView({ type: 'tournament', id: t.id })} />
-                  ))}
-                </div>
-              </section>
-            )}
-          </div>
-        )}
+                <span className="text-gray-400 text-xl ml-4">&rsaquo;</span>
+              </div>
+            </div>
+          </section>
+
+          {/* Tournaments */}
+          {tournaments.length === 0 && inProgress.length === 0 ? (
+            isAdmin ? (
+              <div className="text-center py-12 text-gray-400">
+                <p className="text-xl">No tournaments yet</p>
+                <p className="mt-2 text-sm">Create your first tournament to get started</p>
+              </div>
+            ) : null
+          ) : (
+            <>
+              {inProgress.length > 0 && (
+                <section>
+                  <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Tournaments · In Progress</h2>
+                  <div className="grid gap-3">
+                    {inProgress.map(t => (
+                      <TournamentCard key={t.id} t={t} onClick={() => setView({ type: 'tournament', id: t.id })} />
+                    ))}
+                  </div>
+                </section>
+              )}
+              {history.length > 0 && (
+                <section>
+                  <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Tournaments · History</h2>
+                  <div className="grid gap-3">
+                    {history.map(t => (
+                      <TournamentCard key={t.id} t={t} onClick={() => setView({ type: 'tournament', id: t.id })} />
+                    ))}
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
