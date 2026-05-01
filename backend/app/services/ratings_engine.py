@@ -48,6 +48,19 @@ def _rc_update(rating: float, sd: float, results: list[dict]) -> tuple[float, fl
     return rating + delta, new_sd
 
 
+def _game_stats(match_games, for_team1: bool) -> tuple[int, int]:
+    """Return (individual_wins, individual_losses) for the given side."""
+    wins, losses = 0, 0
+    for game in match_games:
+        if game.team1Score == 0 and game.team2Score == 0:
+            continue
+        t1_won = game.team1Score > game.team2Score
+        if (for_team1 and t1_won) or (not for_team1 and not t1_won):
+            wins += 1
+        else:
+            losses += 1
+    return wins, losses
+
 
 def compute_rc_ratings(games: list[BaselineGame], gtype: str) -> list[PlayerRatingEntry]:
     state: dict[str, PlayerRatingEntry] = {}
@@ -77,39 +90,31 @@ def compute_rc_ratings(games: list[BaselineGame], gtype: str) -> list[PlayerRati
 
         # Collect every result per player using snapshot (pre-period) opponent ratings
         results_map: dict[str, list[dict]] = {}
-        match_wins_map: dict[str, int] = {}
-        match_losses_map: dict[str, int] = {}
-        ind_games_map: dict[str, int] = {}  # individual games played
+        wins_map: dict[str, int] = {}
+        losses_map: dict[str, int] = {}
 
         for g in period:
             team1_won = g.winner == 1
-            ind_total = sum(
-                1 for game in g.games if game.team1Score != 0 or game.team2Score != 0
-            )
             for my_team, opp_team, won, is_team1 in [
                 (g.team1, g.team2, team1_won, True),
                 (g.team2, g.team1, not team1_won, False),
             ]:
-                # Average the opposing team into one virtual opponent (1 result per match)
                 opp_snaps = [snap.get(opp) or get(opp) for opp in opp_team]
                 avg_r = sum(s.rating for s in opp_snaps) / len(opp_snaps)
                 avg_sd = sum(s.uncertainty for s in opp_snaps) / len(opp_snaps)
+                gw, gl = _game_stats(g.games, is_team1)
                 for name in my_team:
                     if name not in results_map:
                         results_map[name] = []
-                        match_wins_map[name] = 0
-                        match_losses_map[name] = 0
-                        ind_games_map[name] = 0
+                        wins_map[name] = 0
+                        losses_map[name] = 0
                     results_map[name].append({
                         'r_opp': avg_r,
                         'sd_opp': avg_sd,
-                        'score': 1.0 if won else 0.0,
+                        'score': 1.0 if won else 0.0,  # match outcome drives rating
                     })
-                    if won:
-                        match_wins_map[name] += 1
-                    else:
-                        match_losses_map[name] += 1
-                    ind_games_map[name] += ind_total
+                    wins_map[name] += gw
+                    losses_map[name] += gl
 
         # One batch update per player for the whole period
         for name, results in results_map.items():
@@ -118,9 +123,9 @@ def compute_rc_ratings(games: list[BaselineGame], gtype: str) -> list[PlayerRati
             cur = get(name)
             state[name] = PlayerRatingEntry(
                 name=name, rating=new_r, uncertainty=new_sd,
-                won=cur.won + match_wins_map[name],
-                lost=cur.lost + match_losses_map[name],
-                gamesPlayed=cur.gamesPlayed + ind_games_map[name],
+                won=cur.won + wins_map[name],
+                lost=cur.lost + losses_map[name],
+                gamesPlayed=cur.gamesPlayed + wins_map[name] + losses_map[name],
             )
 
     return sorted(state.values(), key=lambda r: -r.rating)
@@ -231,39 +236,31 @@ def compute_glicko2_ratings(games: list[BaselineGame], gtype: str) -> list[Playe
 
         # Collect results per player using snapshot opponent g2 state
         results_map: dict[str, list[dict]] = {}
-        match_wins_map: dict[str, int] = {}
-        match_losses_map: dict[str, int] = {}
-        ind_games_map: dict[str, int] = {}  # individual games played
+        wins_map: dict[str, int] = {}
+        losses_map: dict[str, int] = {}
 
         for g in period:
             team1_won = g.winner == 1
-            ind_total = sum(
-                1 for game in g.games if game.team1Score != 0 or game.team2Score != 0
-            )
             for my_team, opp_team, won, is_team1 in [
                 (g.team1, g.team2, team1_won, True),
                 (g.team2, g.team1, not team1_won, False),
             ]:
-                # Average the opposing team into one virtual opponent (1 result per match)
                 opp_g2s = [snap_g2.get(opp) or get(opp)[1] for opp in opp_team]
                 avg_mu = sum(s[0] for s in opp_g2s) / len(opp_g2s)
                 avg_phi = sum(s[1] for s in opp_g2s) / len(opp_g2s)
+                gw, gl = _game_stats(g.games, is_team1)
                 for name in my_team:
                     if name not in results_map:
                         results_map[name] = []
-                        match_wins_map[name] = 0
-                        match_losses_map[name] = 0
-                        ind_games_map[name] = 0
+                        wins_map[name] = 0
+                        losses_map[name] = 0
                     results_map[name].append({
                         'mu_j': avg_mu,
                         'phi_j': avg_phi,
-                        'score': 1.0 if won else 0.0,
+                        'score': 1.0 if won else 0.0,  # match outcome drives rating
                     })
-                    if won:
-                        match_wins_map[name] += 1
-                    else:
-                        match_losses_map[name] += 1
-                    ind_games_map[name] += ind_total
+                    wins_map[name] += gw
+                    losses_map[name] += gl
 
         # One batch update per player
         for name, results in results_map.items():
@@ -275,9 +272,9 @@ def compute_glicko2_ratings(games: list[BaselineGame], gtype: str) -> list[Playe
             state[name] = (
                 PlayerRatingEntry(
                     name=name, rating=new_rating, uncertainty=new_rd, volatility=new_sigma,
-                    won=cur_entry.won + match_wins_map[name],
-                    lost=cur_entry.lost + match_losses_map[name],
-                    gamesPlayed=cur_entry.gamesPlayed + ind_games_map[name],
+                    won=cur_entry.won + wins_map[name],
+                    lost=cur_entry.lost + losses_map[name],
+                    gamesPlayed=cur_entry.gamesPlayed + wins_map[name] + losses_map[name],
                 ),
                 (new_mu, new_phi, new_sigma),
             )
