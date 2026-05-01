@@ -58,17 +58,16 @@ function StatBox({ label, value, sub }: { label: string; value: string | number;
 
 function BucketSection({ label, b }: { label: string; b: PlayerStats['overall'] }) {
   if (b.matchesPlayed === 0) return null;
-  const winRate = pct(b.matchWins, b.matchesPlayed);
-  const gwRate = pct(b.gameWins, b.gameWins + b.gameLosses);
+  const gamesPlayed = b.gameWins + b.gameLosses;
+  const winRate = pct(b.gameWins, gamesPlayed);
   const pointDiff = b.pointsFor - b.pointsAgainst;
 
   return (
     <div>
       <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{label}</h3>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatBox label="Matches" value={b.matchesPlayed} sub={`${b.matchWins}W · ${b.matchesPlayed - b.matchWins}L`} />
+      <div className="grid grid-cols-3 gap-3">
+        <StatBox label="Games" value={gamesPlayed} sub={`${b.gameWins}W · ${b.gameLosses}L`} />
         <StatBox label="Win Rate" value={winRate} />
-        <StatBox label="Games" value={`${b.gameWins}W · ${b.gameLosses}L`} sub={`${gwRate} game win rate`} />
         <StatBox label="Pt Diff" value={pointDiff > 0 ? `+${pointDiff}` : pointDiff} sub={`${b.pointsFor} for · ${b.pointsAgainst} against`} />
       </div>
     </div>
@@ -93,7 +92,7 @@ export default function PlayerStatsScreen({ playerName, tournaments, competitive
           <button onClick={onBack} className="text-gray-500 hover:text-gray-700 text-sm shrink-0">← Back</button>
           <div>
             <h1 className="text-xl font-bold text-gray-900">{playerName}</h1>
-            <p className="text-xs text-gray-400">{stats.overall.matchesPlayed} matches across {stats.tournaments.length} tournament{stats.tournaments.length !== 1 ? 's' : ''}</p>
+            <p className="text-xs text-gray-400">{stats.overall.gameWins + stats.overall.gameLosses} games across {stats.tournaments.length} tournament{stats.tournaments.length !== 1 ? 's' : ''}</p>
           </div>
         </div>
 
