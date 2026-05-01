@@ -8,6 +8,58 @@ function confidenceLabel(uncertainty: number): { text: string; color: string } {
   return { text: 'Unrated', color: 'text-gray-400 bg-gray-100' };
 }
 
+type CombinedEntry = {
+  name: string;
+  rating: number;
+  uncertainty: number;
+  won: number;
+  lost: number;
+  gamesPlayed: number;
+  hasSingles: boolean;
+  hasDoubles: boolean;
+};
+
+function buildCombined(ratings: PlayerRatingEntry[], algo: RatingAlgo): CombinedEntry[] {
+  const map = new Map<string, CombinedEntry>();
+  for (const r of ratings.filter(r => r.algo === algo)) {
+    const cur = map.get(r.name);
+    if (!cur) {
+      map.set(r.name, {
+        name: r.name,
+        rating: r.rating,
+        uncertainty: r.uncertainty,
+        won: r.won,
+        lost: r.lost,
+        gamesPlayed: r.gamesPlayed,
+        hasSingles: r.type === 'singles',
+        hasDoubles: r.type === 'doubles',
+      });
+    } else {
+      const totalGames = cur.gamesPlayed + r.gamesPlayed;
+      const weightedRating = totalGames > 0
+        ? (cur.rating * cur.gamesPlayed + r.rating * r.gamesPlayed) / totalGames
+        : (cur.rating + r.rating) / 2;
+      const weightedUncertainty = totalGames > 0
+        ? (cur.uncertainty * cur.gamesPlayed + r.uncertainty * r.gamesPlayed) / totalGames
+        : (cur.uncertainty + r.uncertainty) / 2;
+      map.set(r.name, {
+        name: r.name,
+        rating: weightedRating,
+        uncertainty: weightedUncertainty,
+        won: cur.won + r.won,
+        lost: cur.lost + r.lost,
+        gamesPlayed: totalGames,
+        hasSingles: cur.hasSingles || r.type === 'singles',
+        hasDoubles: cur.hasDoubles || r.type === 'doubles',
+      });
+    }
+  }
+  return [...map.values()].sort((a, b) => {
+    if (b.won !== a.won) return b.won - a.won;
+    return b.rating - a.rating;
+  });
+}
+
 function RatingsTab({
   ratings, type, algo, onPlayerClick,
 }: {
@@ -91,6 +143,79 @@ function RatingsTab({
   );
 }
 
+function CombinedTab({
+  ratings, algo, onPlayerClick,
+}: {
+  ratings: PlayerRatingEntry[]; algo: RatingAlgo; onPlayerClick?: (name: string) => void;
+}) {
+  const combined = useMemo(() => buildCombined(ratings, algo), [ratings, algo]);
+
+  const MEDAL: Record<number, string> = { 1: '👑', 2: '🥈', 3: '🥉' };
+  const maxRating = combined[0]?.rating ?? 1500;
+  const minBase = algo === 'rc' ? 1000 : 1200;
+
+  if (combined.length === 0) {
+    return (
+      <div className="text-center py-12 text-gray-400">
+        <p className="text-4xl mb-2">🏓</p>
+        <p>No ratings yet</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {combined.map((r, i) => {
+        const rank = i + 1;
+        const isPodium = rank <= 3;
+        const confidence = confidenceLabel(r.uncertainty);
+        const winRate = (r.won + r.lost) > 0 ? Math.round((r.won / (r.won + r.lost)) * 100) : 0;
+        const pct = Math.max(10, ((r.rating - minBase) / (maxRating - minBase || 1)) * 100);
+        const badges = [r.hasSingles && 'S', r.hasDoubles && 'D'].filter(Boolean).join('+');
+        return (
+          <div
+            key={r.name}
+            className={`rounded-xl border px-4 py-3 flex items-center gap-3 ${
+              isPodium
+                ? rank === 1 ? 'border-yellow-300 bg-yellow-50'
+                  : rank === 2 ? 'border-gray-300 bg-gray-50'
+                  : 'border-orange-200 bg-orange-50'
+                : 'border-gray-200 bg-white'
+            }`}
+          >
+            <span className="text-sm font-bold text-gray-400 w-6 shrink-0 text-center">{MEDAL[rank] ?? rank}</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <p
+                  className={`font-semibold text-gray-900 text-sm truncate ${onPlayerClick ? 'cursor-pointer hover:text-blue-600 hover:underline' : ''}`}
+                  onClick={() => onPlayerClick?.(r.name)}
+                >{r.name}</p>
+                <div className="text-right shrink-0">
+                  <span className="font-bold text-lg text-gray-900">{algo === 'rc' ? r.rating.toFixed(1) : Math.round(r.rating)}</span>
+                  <span className="text-xs text-gray-400 ml-1">{badges}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${confidence.color}`}>{confidence.text}</span>
+                <span className="text-xs text-gray-400">{r.won}W · {r.lost}L · {winRate}%</span>
+              </div>
+              <div className="mt-1.5 h-1 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${r.uncertainty > 150 ? 'bg-gray-300' : 'bg-purple-500'}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      <p className="text-xs text-center text-gray-400 pt-2 pb-2">
+        Combined · weighted average of singles + doubles · S = singles only · D = doubles only · S+D = both
+      </p>
+    </div>
+  );
+}
+
 interface Props {
   ratings: PlayerRatingEntry[];
   algo: RatingAlgo;
@@ -102,7 +227,7 @@ interface Props {
 }
 
 export default function RatingsScreen({ ratings, algo, isAdmin, onBack, onAlgoChange, onRecompute, onPlayerClick }: Props) {
-  const [tab, setTab] = useState<'singles' | 'doubles'>('singles');
+  const [tab, setTab] = useState<'singles' | 'doubles' | 'combined'>('combined');
   const [recomputing, setRecomputing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -163,9 +288,9 @@ export default function RatingsScreen({ ratings, algo, isAdmin, onBack, onAlgoCh
           <p className="text-xs text-gray-400 mb-4 text-right">{algo === 'rc' ? 'Ratings Central' : 'Glicko-2'}</p>
         )}
 
-        {/* Singles / Doubles tabs */}
+        {/* Tabs */}
         <div className="flex gap-1 bg-gray-100 p-1 rounded-lg mb-5">
-          {(['singles', 'doubles'] as const).map(t => (
+          {(['combined', 'singles', 'doubles'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-colors ${tab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
               {t.charAt(0).toUpperCase() + t.slice(1)}
@@ -173,7 +298,10 @@ export default function RatingsScreen({ ratings, algo, isAdmin, onBack, onAlgoCh
           ))}
         </div>
 
-        <RatingsTab ratings={ratings} type={tab} algo={algo} onPlayerClick={onPlayerClick} />
+        {tab === 'combined'
+          ? <CombinedTab ratings={ratings} algo={algo} onPlayerClick={onPlayerClick} />
+          : <RatingsTab ratings={ratings} type={tab} algo={algo} onPlayerClick={onPlayerClick} />
+        }
       </div>
     </div>
   );
