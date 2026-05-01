@@ -72,13 +72,14 @@ function PlayerPicker({
 // MatchCard
 // ---------------------------------------------------------------------------
 function MatchCard({
-  match, filterPlayer, isAdmin, onFilter, onDelete,
+  match, filterPlayer, isAdmin, onFilter, onDelete, onDateChange,
 }: {
   match: CompetitiveMatch;
   filterPlayer: string | null;
   isAdmin: boolean;
   onFilter: (name: string) => void;
   onDelete: (id: string) => void;
+  onDateChange: (id: string, date: string) => void;
 }) {
   const playerWon = filterPlayer
     ? (match.team1.includes(filterPlayer) ? match.winner === 1 : match.winner === 2)
@@ -127,17 +128,27 @@ function MatchCard({
               ))}
             </span>
           </div>
-          <div className="flex gap-2 mt-1.5 flex-wrap">
-            {match.games.map((g, i) => {
-              const w = gameWinner(g.team1Score, g.team2Score);
-              return (
-                <span key={i} className="text-xs text-gray-400">
-                  <span className={w === 1 ? 'text-gray-800 font-medium' : ''}>{g.team1Score}</span>
-                  <span className="mx-0.5">–</span>
-                  <span className={w === 2 ? 'text-gray-800 font-medium' : ''}>{g.team2Score}</span>
-                </span>
-              );
-            })}
+          <div className="flex items-center justify-between mt-1.5 gap-2 flex-wrap">
+            <div className="flex gap-2 flex-wrap">
+              {match.games.map((g, i) => {
+                const w = gameWinner(g.team1Score, g.team2Score);
+                return (
+                  <span key={i} className="text-xs text-gray-400">
+                    <span className={w === 1 ? 'text-gray-800 font-medium' : ''}>{g.team1Score}</span>
+                    <span className="mx-0.5">–</span>
+                    <span className={w === 2 ? 'text-gray-800 font-medium' : ''}>{g.team2Score}</span>
+                  </span>
+                );
+              })}
+            </div>
+            {isAdmin && (
+              <input
+                type="date"
+                value={match.date}
+                onChange={e => e.target.value && onDateChange(match.id, e.target.value)}
+                className="text-xs text-gray-400 border-0 outline-none bg-transparent cursor-pointer hover:text-blue-500 transition-colors"
+              />
+            )}
           </div>
         </div>
         {isAdmin && (
@@ -376,6 +387,13 @@ export default function CompetitiveGamesScreen({ matches, players, isAdmin, onBa
     onDataChange();
   }
 
+  async function handleDateChange(id: string, date: string) {
+    const match = matches.find(m => m.id === id);
+    if (!match) return;
+    await saveCompetitiveMatch({ ...match, date });
+    onDataChange();
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-xl mx-auto p-4">
@@ -453,6 +471,7 @@ export default function CompetitiveGamesScreen({ matches, players, isAdmin, onBa
                       isAdmin={isAdmin}
                       onFilter={handleFilter}
                       onDelete={handleDelete}
+                      onDateChange={handleDateChange}
                     />
                   ))}
                 </div>
