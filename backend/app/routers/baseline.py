@@ -13,6 +13,59 @@ def _sanitize(name: str) -> str:
     return re.sub(r'[.#$\[\]/]', '_', name)
 
 
+def _to_list(val) -> list:
+    """Convert Firestore map-stored-as-dict or actual list to a list."""
+    if not val:
+        return []
+    if isinstance(val, list):
+        return val
+    return list(val.values())
+
+
+def _normalize_tournament(t_data: dict, t_id: str) -> dict:
+    """
+    Firestore data recovered from RTDB may use the old 'groups' top-level key
+    instead of 'levels', and arrays may be stored as dicts with numeric string
+    keys. Normalize to the expected shape before Pydantic parsing.
+    """
+    def norm_games(games):
+        return [{'team1Score': g.get('team1Score', 0), 'team2Score': g.get('team2Score', 0)}
+                for g in _to_list(games)]
+
+    def norm_matches(matches):
+        return [
+            {**m, 'games': norm_games(m.get('games', []))}
+            for m in _to_list(matches)
+        ]
+
+    def norm_teams(teams):
+        return [
+            {**t, 'players': _to_list(t.get('players', []))}
+            for t in _to_list(teams)
+        ]
+
+    def norm_groups(groups):
+        return [
+            {**g, 'teams': norm_teams(g.get('teams', [])), 'matches': norm_matches(g.get('matches', []))}
+            for g in _to_list(groups)
+        ]
+
+    if 'groups' in t_data and 'levels' not in t_data:
+        # Old format: groups are at the top level, no levels array
+        levels = [{
+            'id': t_id + '_l1',
+            'name': 'Level 1',
+            'groups': norm_groups(t_data['groups']),
+        }]
+    else:
+        levels = [
+            {**lev, 'groups': norm_groups(lev.get('groups', []))}
+            for lev in _to_list(t_data.get('levels', []))
+        ]
+
+    return {**t_data, 'id': t_id, 'levels': levels}
+
+
 def _game_winner(s1: int, s2: int) -> int | None:
     if s1 >= 11 and s1 - s2 >= 2:
         return 1
@@ -45,7 +98,7 @@ def _tournament_matches_as_games(db) -> list[BaselineGame]:
     for t_doc in db.collection('tournaments').stream():
         t_data = t_doc.to_dict()
         try:
-            t = Tournament(**{**t_data, 'id': t_doc.id})
+            t = Tournament(**_normalize_tournament(t_data, t_doc.id))
         except Exception:
             continue
         gtype = t.matchType or 'singles'

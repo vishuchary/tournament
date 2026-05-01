@@ -34,59 +34,25 @@ def health():
         return {'status': 'ok', 'firestore': 'error', 'detail': str(e)}
 
 
-@app.get('/debug/counts')
-def debug_counts():
-    try:
-        db = get_firestore()
-        t0 = time.time()
-        games = list(db.collection('baseline_games').stream())
-        t1 = time.time()
-        tournaments_docs = list(db.collection('tournaments').stream())
-        t2 = time.time()
-        return {
-            'baseline_games': len(games),
-            'tournaments': len(tournaments_docs),
-            'games_ms': int((t1 - t0) * 1000),
-            'tournaments_ms': int((t2 - t1) * 1000),
-            'total_ms': int((t2 - t0) * 1000),
-        }
-    except Exception as e:
-        return {'error': str(e)}
-
-
-@app.post('/debug/recompute-dry')
-def debug_recompute_dry():
+@app.get('/debug/games')
+def debug_games():
+    """Show how many tournament and competitive games the backend can actually parse."""
     import traceback
     try:
-        from .routers.baseline import _tournament_matches_as_games, _sanitize
-        from .services.ratings_engine import compute_rc_ratings, compute_glicko2_ratings
+        from .routers.baseline import _tournament_matches_as_games, _competitive_matches_as_games
         db = get_firestore()
-        t0 = time.time()
-        games = _tournament_matches_as_games(db)
-        t1 = time.time()
-        ratings_rc_s = compute_rc_ratings(games, 'singles')
-        t2 = time.time()
-        batch = db.batch()
-        for gtype in ('singles', 'doubles'):
-            for algo in ('rc', 'glicko2'):
-                ratings = compute_rc_ratings(games, gtype) if algo == 'rc' else compute_glicko2_ratings(games, gtype)
-                for r in ratings:
-                    key = _sanitize(r.name) + f'_{gtype}_{algo}'
-                    ref = db.collection('baseline_ratings').document(key)
-                    data = r.model_dump()
-                    data['algo'] = algo
-                    data['type'] = gtype
-                    batch.set(ref, data)
-        batch.commit()
-        t3 = time.time()
+        t_games = _tournament_matches_as_games(db)
+        c_games = _competitive_matches_as_games(db)
+        all_games = t_games + c_games
+        singles = [g for g in all_games if g.type == 'singles']
+        doubles = [g for g in all_games if g.type == 'doubles']
         return {
-            'status': 'ok',
-            'tournament_games': len(games),
-            'read_ms': int((t1 - t0) * 1000),
-            'compute_ms': int((t2 - t1) * 1000),
-            'write_ms': int((t3 - t2) * 1000),
-            'total_ms': int((t3 - t0) * 1000),
-            'ratings_written': len(ratings_rc_s),
+            'tournament_games': len(t_games),
+            'competitive_games': len(c_games),
+            'total': len(all_games),
+            'singles': len(singles),
+            'doubles': len(doubles),
+            'sample': [{'id': g.id, 'type': g.type, 'winner': g.winner, 'team1': g.team1, 'team2': g.team2} for g in all_games[:5]],
         }
     except Exception as e:
-        return {'status': 'error', 'detail': str(e), 'trace': traceback.format_exc()}
+        return {'error': str(e), 'trace': traceback.format_exc()}
