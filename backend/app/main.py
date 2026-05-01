@@ -45,6 +45,7 @@ def debug_games():
 
         # Per-tournament parse diagnostics
         tournament_summary = []
+        skipped_matches = []
         for t_doc in db.collection('tournaments').stream():
             t_data = t_doc.to_dict()
             entry = {'id': t_doc.id, 'name': t_data.get('name', '?'), 'status': 'ok', 'matches_found': 0, 'matches_completed': 0, 'error': None}
@@ -59,6 +60,19 @@ def debug_games():
                             entry['matches_found'] += 1
                             if match.completed:
                                 entry['matches_completed'] += 1
+                                team1_players = team_map.get(match.team1Id, [])
+                                team2_players = team_map.get(match.team2Id, [])
+                                winner = _match_winner(match.games, level_set_count)
+                                if winner is None or not team1_players or not team2_players:
+                                    scores = [(g.team1Score, g.team2Score) for g in match.games]
+                                    skipped_matches.append({
+                                        'match_id': match.id,
+                                        'team1': team1_players,
+                                        'team2': team2_players,
+                                        'scores': scores,
+                                        'setCount': level_set_count,
+                                        'reason': 'no_winner' if winner is None else 'missing_players',
+                                    })
             except Exception as ex:
                 entry['status'] = 'parse_error'
                 entry['error'] = str(ex)
@@ -92,6 +106,7 @@ def debug_games():
             'competitive_games': len(c_games),
             'total': len(all_games),
             'tournaments': tournament_summary,
+            'skipped_matches': skipped_matches,
             'player_stats': {k: v for k, v in sorted_stats},
             'all_games': [{'id': g.id, 'type': g.type, 'winner': g.winner, 'team1': g.team1, 'team2': g.team2} for g in all_games],
         }

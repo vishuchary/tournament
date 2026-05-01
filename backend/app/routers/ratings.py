@@ -102,9 +102,7 @@ def _tournament_matches_as_games(db) -> list[BaselineGame]:
         except Exception:
             continue
         gtype = t.matchType or 'singles'
-        t_set_count = t.setCount or 3
         for level in t.levels:
-            level_set_count = level.setCount or t_set_count
             for group in level.groups:
                 team_map = {team.id: team.players for team in group.teams}
                 for match in group.matches:
@@ -114,21 +112,22 @@ def _tournament_matches_as_games(db) -> list[BaselineGame]:
                     team2_players = team_map.get(match.team2Id, [])
                     if not team1_players or not team2_players:
                         continue
-                    winner = _match_winner(match.games, level_set_count)
-                    if winner is None:
-                        continue
-                    result.append(BaselineGame(
-                        id=f't_{t.id}_{match.id}',
-                        type=gtype,
-                        team1=team1_players,
-                        team2=team2_players,
-                        games=match.games,
-                        winner=winner,
-                        setCount=level_set_count,
-                        date=t.date or '',
-                        createdAt=t.createdAt + idx,
-                    ))
-                    idx += 1
+                    for game in match.games:
+                        gw = _game_winner(game.team1Score, game.team2Score)
+                        if gw is None:
+                            continue
+                        result.append(BaselineGame(
+                            id=f't_{t.id}_{match.id}_{idx}',
+                            type=gtype,
+                            team1=team1_players,
+                            team2=team2_players,
+                            games=[game],
+                            winner=gw,
+                            setCount=1,
+                            date=t.date or '',
+                            createdAt=t.createdAt + idx,
+                        ))
+                        idx += 1
     return result
 
 
@@ -137,17 +136,27 @@ def _competitive_matches_as_games(db) -> list[BaselineGame]:
     for doc in db.collection('competitive_matches').stream():
         d = doc.to_dict()
         try:
-            result.append(BaselineGame(
-                id=doc.id,
-                type=d.get('type', 'singles'),
-                team1=d.get('team1', []),
-                team2=d.get('team2', []),
-                games=[Game(team1Score=g['team1Score'], team2Score=g['team2Score']) for g in d.get('games', [])],
-                winner=d['winner'],
-                setCount=d.get('setCount', 3),
-                date=d.get('date', ''),
-                createdAt=d.get('createdAt', 0),
-            ))
+            team1 = d.get('team1', [])
+            team2 = d.get('team2', [])
+            date = d.get('date', '')
+            created = d.get('createdAt', 0)
+            gtype = d.get('type', 'singles')
+            for i, g in enumerate(d.get('games', [])):
+                game = Game(team1Score=g['team1Score'], team2Score=g['team2Score'])
+                gw = _game_winner(game.team1Score, game.team2Score)
+                if gw is None:
+                    continue
+                result.append(BaselineGame(
+                    id=f'{doc.id}_{i}',
+                    type=gtype,
+                    team1=team1,
+                    team2=team2,
+                    games=[game],
+                    winner=gw,
+                    setCount=1,
+                    date=date,
+                    createdAt=created + i,
+                ))
         except Exception:
             continue
     return result
