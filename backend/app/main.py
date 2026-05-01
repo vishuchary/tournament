@@ -38,8 +38,32 @@ def health():
 def debug_games():
     import traceback
     try:
-        from .routers.ratings import _tournament_matches_as_games, _competitive_matches_as_games
+        from .routers.ratings import _tournament_matches_as_games, _competitive_matches_as_games, _normalize_tournament, _match_winner, _to_list
+        from .models.tournament import Tournament
+        import math
         db = get_firestore()
+
+        # Per-tournament parse diagnostics
+        tournament_summary = []
+        for t_doc in db.collection('tournaments').stream():
+            t_data = t_doc.to_dict()
+            entry = {'id': t_doc.id, 'name': t_data.get('name', '?'), 'status': 'ok', 'matches_found': 0, 'matches_completed': 0, 'error': None}
+            try:
+                t = Tournament(**_normalize_tournament(t_data, t_doc.id))
+                t_set_count = t.setCount or 3
+                for level in t.levels:
+                    level_set_count = level.setCount or t_set_count
+                    for group in level.groups:
+                        team_map = {team.id: team.players for team in group.teams}
+                        for match in group.matches:
+                            entry['matches_found'] += 1
+                            if match.completed:
+                                entry['matches_completed'] += 1
+            except Exception as ex:
+                entry['status'] = 'parse_error'
+                entry['error'] = str(ex)
+            tournament_summary.append(entry)
+
         t_games = _tournament_matches_as_games(db)
         c_games = _competitive_matches_as_games(db)
         all_games = t_games + c_games
@@ -67,6 +91,7 @@ def debug_games():
             'tournament_games': len(t_games),
             'competitive_games': len(c_games),
             'total': len(all_games),
+            'tournaments': tournament_summary,
             'player_stats': {k: v for k, v in sorted_stats},
             'all_games': [{'id': g.id, 'type': g.type, 'winner': g.winner, 'team1': g.team1, 'team2': g.team2} for g in all_games],
         }
