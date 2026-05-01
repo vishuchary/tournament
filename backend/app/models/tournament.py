@@ -63,7 +63,7 @@ class PlayerRanking(BaseModel):
     matchesPlayed: int = 0
 
 
-class BaselineGame(BaseModel):
+class RatingGame(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     id: str
     type: str  # 'singles' | 'doubles'

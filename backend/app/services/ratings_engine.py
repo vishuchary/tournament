@@ -7,7 +7,7 @@ by sequential per-game updates with high initial uncertainty.
 """
 import math
 from itertools import groupby
-from ..models.tournament import BaselineGame, PlayerRatingEntry
+from ..models.tournament import RatingGame, PlayerRatingEntry
 
 # ---------------------------------------------------------------------------
 # Ratings Central
@@ -48,7 +48,8 @@ def _rc_update(rating: float, sd: float, results: list[dict]) -> tuple[float, fl
     return rating + delta, new_sd
 
 
-def compute_rc_ratings(games: list[BaselineGame], gtype: str) -> list[PlayerRatingEntry]:
+
+def compute_rc_ratings(games: list[RatingGame], gtype: str) -> list[PlayerRatingEntry]:
     state: dict[str, PlayerRatingEntry] = {}
 
     def get(name: str) -> PlayerRatingEntry:
@@ -85,7 +86,6 @@ def compute_rc_ratings(games: list[BaselineGame], gtype: str) -> list[PlayerRati
                 (g.team1, g.team2, team1_won),
                 (g.team2, g.team1, not team1_won),
             ]:
-                # Average the opposing team into one virtual opponent (1 result per match)
                 opp_snaps = [snap.get(opp) or get(opp) for opp in opp_team]
                 avg_r = sum(s.rating for s in opp_snaps) / len(opp_snaps)
                 avg_sd = sum(s.uncertainty for s in opp_snaps) / len(opp_snaps)
@@ -99,10 +99,8 @@ def compute_rc_ratings(games: list[BaselineGame], gtype: str) -> list[PlayerRati
                         'sd_opp': avg_sd,
                         'score': 1.0 if won else 0.0,
                     })
-                    if won:
-                        wins_map[name] += 1
-                    else:
-                        losses_map[name] += 1
+                    wins_map[name] += 1 if won else 0
+                    losses_map[name] += 0 if won else 1
 
         # One batch update per player for the whole period
         for name, results in results_map.items():
@@ -194,7 +192,7 @@ def _g2_update(mu: float, phi: float, sigma: float, results: list[dict]) -> tupl
     return new_mu, new_phi, new_sigma
 
 
-def compute_glicko2_ratings(games: list[BaselineGame], gtype: str) -> list[PlayerRatingEntry]:
+def compute_glicko2_ratings(games: list[RatingGame], gtype: str) -> list[PlayerRatingEntry]:
     # state: name → (entry, (mu, phi, sigma))
     state: dict[str, tuple[PlayerRatingEntry, tuple[float, float, float]]] = {}
 
@@ -233,10 +231,9 @@ def compute_glicko2_ratings(games: list[BaselineGame], gtype: str) -> list[Playe
                 (g.team1, g.team2, team1_won),
                 (g.team2, g.team1, not team1_won),
             ]:
-                # Average the opposing team into one virtual opponent (1 result per match)
                 opp_g2s = [snap_g2.get(opp) or get(opp)[1] for opp in opp_team]
-                avg_mu = sum(g[0] for g in opp_g2s) / len(opp_g2s)
-                avg_phi = sum(g[1] for g in opp_g2s) / len(opp_g2s)
+                avg_mu = sum(s[0] for s in opp_g2s) / len(opp_g2s)
+                avg_phi = sum(s[1] for s in opp_g2s) / len(opp_g2s)
                 for name in my_team:
                     if name not in results_map:
                         results_map[name] = []
@@ -247,10 +244,8 @@ def compute_glicko2_ratings(games: list[BaselineGame], gtype: str) -> list[Playe
                         'phi_j': avg_phi,
                         'score': 1.0 if won else 0.0,
                     })
-                    if won:
-                        wins_map[name] += 1
-                    else:
-                        losses_map[name] += 1
+                    wins_map[name] += 1 if won else 0
+                    losses_map[name] += 0 if won else 1
 
         # One batch update per player
         for name, results in results_map.items():

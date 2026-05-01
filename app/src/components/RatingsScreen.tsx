@@ -14,7 +14,10 @@ function RatingsTab({
   ratings: PlayerRatingEntry[]; type: 'singles' | 'doubles'; algo: RatingAlgo; onPlayerClick?: (name: string) => void;
 }) {
   const filtered = useMemo(
-    () => ratings.filter(r => r.type === type && r.algo === algo).sort((a, b) => b.rating - a.rating),
+    () => ratings.filter(r => r.type === type && r.algo === algo).sort((a, b) => {
+      if (b.won !== a.won) return b.won - a.won;
+      return b.rating - a.rating;
+    }),
     [ratings, type, algo],
   );
 
@@ -38,7 +41,7 @@ function RatingsTab({
         const rank = i + 1;
         const isPodium = rank <= 3;
         const confidence = confidenceLabel(r.uncertainty);
-        const winRate = r.gamesPlayed > 0 ? Math.round((r.won / r.gamesPlayed) * 100) : 0;
+        const winRate = (r.won + r.lost) > 0 ? Math.round((r.won / (r.won + r.lost)) * 100) : 0;
         const pct = Math.max(10, ((r.rating - minBase) / (maxRating - minBase || 1)) * 100);
         const uncertLabel = algo === 'rc' ? '±SD' : '±RD';
         return (
