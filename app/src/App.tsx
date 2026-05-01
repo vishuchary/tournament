@@ -17,13 +17,11 @@ import PlayerStatsScreen from './components/PlayerStatsScreen';
 import RatingsScreen from './components/RatingsScreen';
 import CompetitiveGamesScreen from './components/CompetitiveGamesScreen';
 import AdminLogin from './components/AdminLogin';
-import ImportCSV from './components/ImportCSV';
 import './index.css';
 
 type View =
   | { type: 'home' }
   | { type: 'new' }
-  | { type: 'import' }
   | { type: 'tournament'; id: string }
   | { type: 'competitive' }
   | { type: 'players' }
@@ -166,15 +164,6 @@ export default function App() {
     );
   }
 
-  if (view.type === 'import') {
-    return (
-      <ImportCSV
-        seq={tournaments.length + 1}
-        onCreate={handleCreate}
-        onCancel={() => setView({ type: 'home' })}
-      />
-    );
-  }
 
   if (view.type === 'players') {
     return <PlayersScreen players={players} isAdmin={isAdmin} onBack={() => setView({ type: 'home' })} getToken={getToken} />;
@@ -291,12 +280,6 @@ export default function App() {
             </button>
             {isAdmin && (
               <>
-                <button
-                  onClick={() => setView({ type: 'import' })}
-                  className="bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-lg font-medium hover:border-gray-300 transition-colors text-sm"
-                >
-                  Import CSV
-                </button>
                 <button
                   onClick={() => setView({ type: 'new' })}
                   className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition-colors"
