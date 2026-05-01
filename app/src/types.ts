@@ -54,6 +54,18 @@ export interface Tournament {
 }
 
 
+export interface CompetitiveMatch {
+  id: string;
+  type: 'singles' | 'doubles';
+  team1: string[];
+  team2: string[];
+  games: Game[];
+  winner: 1 | 2;
+  setCount: number;
+  date: string;
+  createdAt: number;
+}
+
 export interface PlayerRatingEntry {
   name: string;
   rating: number;

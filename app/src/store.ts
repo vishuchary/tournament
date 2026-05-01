@@ -3,7 +3,7 @@ import {
   onSnapshot, query, orderBy,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { Tournament, TournamentLevel, Group, Match, Player, PlayerRatingEntry } from './types';
+import type { Tournament, TournamentLevel, Group, Match, Player, PlayerRatingEntry, CompetitiveMatch } from './types';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'https://backend-five-gules-97.vercel.app';
 
@@ -124,6 +124,27 @@ export function savePlayer(p: Player): Promise<void> {
 export function deletePlayer(id: string): Promise<void> {
   return deleteDoc(doc(db, 'players', id))
     .catch(err => console.error('Firestore delete player failed:', err));
+}
+
+// ---------------------------------------------------------------------------
+// Competitive matches
+// ---------------------------------------------------------------------------
+
+export function subscribeCompetitiveMatches(callback: (matches: CompetitiveMatch[]) => void): () => void {
+  const q = query(collection(db, 'competitive_matches'), orderBy('createdAt', 'desc'));
+  return onSnapshot(q, snapshot => {
+    callback(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as CompetitiveMatch)));
+  });
+}
+
+export function saveCompetitiveMatch(m: CompetitiveMatch): Promise<void> {
+  return setDoc(doc(db, 'competitive_matches', m.id), m)
+    .catch(err => console.error('Firestore save competitive match failed:', err));
+}
+
+export function deleteCompetitiveMatch(id: string): Promise<void> {
+  return deleteDoc(doc(db, 'competitive_matches', id))
+    .catch(err => console.error('Firestore delete competitive match failed:', err));
 }
 
 // ---------------------------------------------------------------------------

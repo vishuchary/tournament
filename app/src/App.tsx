@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { auth } from './firebase';
-import type { Tournament, Player, PlayerRatingEntry } from './types';
+import type { Tournament, Player, PlayerRatingEntry, CompetitiveMatch } from './types';
 import {
   subscribeTournaments, saveTournament, deleteTournament,
   subscribePlayers,
   subscribeBaselineRatings, subscribeAlgoSetting, saveAlgoSetting,
   triggerBaselineRatingsRecompute,
+  subscribeCompetitiveMatches,
   type RatingAlgo,
 } from './store';
 import TournamentSetup from './components/TournamentSetup';
@@ -14,6 +15,7 @@ import TournamentView from './components/TournamentView';
 import PlayersScreen from './components/PlayersScreen';
 import PlayerStatsScreen from './components/PlayerStatsScreen';
 import RatingsScreen from './components/RatingsScreen';
+import CompetitiveGamesScreen from './components/CompetitiveGamesScreen';
 import AdminLogin from './components/AdminLogin';
 import ImportCSV from './components/ImportCSV';
 import './index.css';
@@ -23,6 +25,7 @@ type View =
   | { type: 'new' }
   | { type: 'import' }
   | { type: 'tournament'; id: string }
+  | { type: 'competitive' }
   | { type: 'players' }
   | { type: 'playerStats'; name: string; from: 'ratings' }
   | { type: 'ratings' };
@@ -86,6 +89,7 @@ function TournamentCard({ t, onClick }: { t: Tournament; onClick: () => void }) 
 export default function App() {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
+  const [competitiveMatches, setCompetitiveMatches] = useState<CompetitiveMatch[]>([]);
   const [baselineRatings, setBaselineRatings] = useState<PlayerRatingEntry[]>([]);
   const [algo, setAlgo] = useState<RatingAlgo>('rc');
   const [view, setView] = useState<View>({ type: 'home' });
@@ -110,11 +114,13 @@ export default function App() {
       }
     });
     const unsubscribePlayers = subscribePlayers(setPlayers);
+    const unsubscribeCompetitive = subscribeCompetitiveMatches(setCompetitiveMatches);
     const unsubscribeBaselineRatings = subscribeBaselineRatings(setBaselineRatings);
     const unsubscribeAlgo = subscribeAlgoSetting(setAlgo);
     return () => {
       unsubscribeTournaments();
       unsubscribePlayers();
+      unsubscribeCompetitive();
       unsubscribeBaselineRatings();
       unsubscribeAlgo();
     };
@@ -180,6 +186,18 @@ export default function App() {
         playerName={view.name}
         tournaments={tournaments}
         onBack={() => setView({ type: view.from })}
+      />
+    );
+  }
+
+  if (view.type === 'competitive') {
+    return (
+      <CompetitiveGamesScreen
+        matches={competitiveMatches}
+        players={players}
+        isAdmin={isAdmin}
+        onBack={() => setView({ type: 'home' })}
+        onDataChange={handleRecompute}
       />
     );
   }
@@ -290,6 +308,30 @@ export default function App() {
         </div>
 
         <div className="space-y-8">
+          {/* Competitive Games */}
+          <section>
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Competitive Play</h2>
+            <div
+              onClick={() => setView({ type: 'competitive' })}
+              className="bg-white rounded-xl border border-purple-200 hover:border-purple-400 p-5 cursor-pointer hover:shadow-sm transition-all"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <h2 className="text-lg font-semibold text-gray-900">Competitive Matches</h2>
+                    <span className="shrink-0 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">Live</span>
+                  </div>
+                  <p className="text-sm text-gray-500">
+                    {competitiveMatches.length === 0
+                      ? 'No matches recorded yet'
+                      : `${competitiveMatches.length} match${competitiveMatches.length !== 1 ? 'es' : ''} recorded · singles & doubles`}
+                  </p>
+                </div>
+                <span className="text-gray-400 text-xl ml-4">&rsaquo;</span>
+              </div>
+            </div>
+          </section>
+
           {/* Tournaments */}
           {tournaments.length === 0 && inProgress.length === 0 ? (
             isAdmin ? (

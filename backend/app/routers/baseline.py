@@ -79,11 +79,34 @@ def _tournament_matches_as_games(db) -> list[BaselineGame]:
     return result
 
 
+def _competitive_matches_as_games(db) -> list[BaselineGame]:
+    result = []
+    for doc in db.collection('competitive_matches').stream():
+        d = doc.to_dict()
+        try:
+            result.append(BaselineGame(
+                id=doc.id,
+                type=d.get('type', 'singles'),
+                team1=d.get('team1', []),
+                team2=d.get('team2', []),
+                games=[Game(team1Score=g['team1Score'], team2Score=g['team2Score']) for g in d.get('games', [])],
+                winner=d['winner'],
+                setCount=d.get('setCount', 3),
+                date=d.get('date', ''),
+                createdAt=d.get('createdAt', 0),
+            ))
+        except Exception:
+            continue
+    return result
+
+
 @router.post('/ratings/recompute', response_model=dict, dependencies=[Depends(verify_token)])
 def recompute_baseline_ratings():
     try:
         db = get_firestore()
-        games = _tournament_matches_as_games(db)
+        tournament_games = _tournament_matches_as_games(db)
+        competitive_games = _competitive_matches_as_games(db)
+        games = tournament_games + competitive_games
 
         batch = db.batch()
         for gtype in ('singles', 'doubles'):
@@ -101,7 +124,7 @@ def recompute_baseline_ratings():
                     batch.set(ref, data)
         batch.commit()
 
-        return {'status': 'ok', 'tournament_games': len(games)}
+        return {'status': 'ok', 'tournament_games': len(tournament_games), 'competitive_games': len(competitive_games)}
     except Exception as e:
         import traceback
         from fastapi import HTTPException

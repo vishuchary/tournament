@@ -60,8 +60,8 @@ function RatingsTab({
                   onClick={() => onPlayerClick?.(r.name)}
                 >{r.name}</p>
                 <div className="text-right shrink-0">
-                  <span className="font-bold text-lg text-gray-900">{Math.round(r.rating)}</span>
-                  <span className="text-xs text-gray-400 ml-1">{uncertLabel} {Math.round(r.uncertainty)}</span>
+                  <span className="font-bold text-lg text-gray-900">{algo === 'rc' ? r.rating.toFixed(3) : Math.round(r.rating)}</span>
+                  <span className="text-xs text-gray-400 ml-1">{uncertLabel} {algo === 'rc' ? r.uncertainty.toFixed(3) : Math.round(r.uncertainty)}</span>
                 </div>
               </div>
               <div className="flex items-center gap-2 mt-0.5">
