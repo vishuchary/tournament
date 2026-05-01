@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .routers import tournaments, baseline
+from .routers import tournaments, ratings
 from .services.firestore_client import get_firestore
 import os
 import time
@@ -20,7 +20,7 @@ app.add_middleware(
 )
 
 app.include_router(tournaments.router)
-app.include_router(baseline.router)
+app.include_router(ratings.router)
 
 
 
@@ -28,7 +28,7 @@ app.include_router(baseline.router)
 def health():
     try:
         db = get_firestore()
-        db.collection('settings').document('baseline_algo').get()
+        db.collection('settings').document('algo').get()
         return {'status': 'ok', 'firestore': 'ok'}
     except Exception as e:
         return {'status': 'ok', 'firestore': 'error', 'detail': str(e)}
@@ -39,7 +39,7 @@ def debug_games():
     """Show how many tournament and competitive games the backend can actually parse."""
     import traceback
     try:
-        from .routers.baseline import _tournament_matches_as_games, _competitive_matches_as_games
+        from .routers.ratings import _tournament_matches_as_games, _competitive_matches_as_games
         db = get_firestore()
         t_games = _tournament_matches_as_games(db)
         c_games = _competitive_matches_as_games(db)
