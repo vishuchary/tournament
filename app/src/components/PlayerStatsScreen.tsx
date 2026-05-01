@@ -1,11 +1,44 @@
 import { computePlayerStats, type PlayerStats } from '../rankings';
-import type { Tournament, CompetitiveMatch } from '../types';
+import type { Tournament, CompetitiveMatch, PlayerRatingEntry } from '../types';
+import type { RatingAlgo } from '../store';
 
 interface Props {
   playerName: string;
   tournaments: Tournament[];
   competitiveMatches: CompetitiveMatch[];
+  ratings: PlayerRatingEntry[];
+  algo: RatingAlgo;
   onBack: () => void;
+}
+
+function confidenceLabel(uncertainty: number): { text: string; color: string } {
+  if (uncertainty < 80)  return { text: 'Established', color: 'text-green-600 bg-green-50' };
+  if (uncertainty < 150) return { text: 'Provisional', color: 'text-yellow-600 bg-yellow-50' };
+  return { text: 'Unrated', color: 'text-gray-400 bg-gray-100' };
+}
+
+function RatingCard({ entry, algo }: { entry: PlayerRatingEntry; algo: RatingAlgo }) {
+  const confidence = confidenceLabel(entry.uncertainty);
+  const winRate = (entry.won + entry.lost) > 0 ? Math.round((entry.won / (entry.won + entry.lost)) * 100) : 0;
+  const uncertLabel = algo === 'rc' ? '±SD' : '±RD';
+  const ratingStr = algo === 'rc' ? entry.rating.toFixed(1) : Math.round(entry.rating).toString();
+  const uncertStr = algo === 'rc' ? entry.uncertainty.toFixed(1) : Math.round(entry.uncertainty).toString();
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 px-4 py-3">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{entry.type}</span>
+        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${confidence.color}`}>{confidence.text}</span>
+      </div>
+      <div className="flex items-end justify-between">
+        <div>
+          <span className="text-2xl font-bold text-gray-900">{ratingStr}</span>
+          <span className="text-xs text-gray-400 ml-1">{uncertLabel} {uncertStr}</span>
+        </div>
+        <span className="text-sm text-gray-500">{entry.won}W · {entry.lost}L · {winRate}%</span>
+      </div>
+    </div>
+  );
 }
 
 function pct(wins: number, total: number) {
@@ -42,11 +75,15 @@ function BucketSection({ label, b }: { label: string; b: PlayerStats['overall'] 
   );
 }
 
-export default function PlayerStatsScreen({ playerName, tournaments, competitiveMatches, onBack }: Props) {
+export default function PlayerStatsScreen({ playerName, tournaments, competitiveMatches, ratings, algo, onBack }: Props) {
   const stats = computePlayerStats(playerName, tournaments, competitiveMatches);
   const hasSingles = stats.singles.matchesPlayed > 0;
   const hasDoubles = stats.doubles.matchesPlayed > 0;
   const hasBoth = hasSingles && hasDoubles;
+
+  const playerRatings = ratings.filter(r => r.name === playerName && r.algo === algo);
+  const singlesRating = playerRatings.find(r => r.type === 'singles');
+  const doublesRating = playerRatings.find(r => r.type === 'doubles');
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -61,6 +98,19 @@ export default function PlayerStatsScreen({ playerName, tournaments, competitive
         </div>
 
         <div className="space-y-6">
+          {/* Ratings */}
+          {(singlesRating || doublesRating) && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                Rating <span className="normal-case font-normal text-gray-400">({algo === 'rc' ? 'Ratings Central' : 'Glicko-2'})</span>
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {singlesRating && <RatingCard entry={singlesRating} algo={algo} />}
+                {doublesRating && <RatingCard entry={doublesRating} algo={algo} />}
+              </div>
+            </div>
+          )}
+
           {/* Overall — only show if they played both types */}
           {hasBoth && <BucketSection label="Overall" b={stats.overall} />}
 

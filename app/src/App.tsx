@@ -191,6 +191,8 @@ export default function App() {
         playerName={view.name}
         tournaments={tournaments}
         competitiveMatches={competitiveMatches}
+        ratings={baselineRatings}
+        algo={algo}
         onBack={() => setView(view.back)}
       />
     );
