@@ -16,9 +16,6 @@ function RatingsTab({
   const filtered = useMemo(
     () => ratings.filter(r => r.type === type && r.algo === algo).sort((a, b) => {
       if (b.won !== a.won) return b.won - a.won;
-      const aRate = a.gamesPlayed > 0 ? a.won / a.gamesPlayed : 0;
-      const bRate = b.gamesPlayed > 0 ? b.won / b.gamesPlayed : 0;
-      if (Math.abs(bRate - aRate) > 0.001) return bRate - aRate;
       return b.rating - a.rating;
     }),
     [ratings, type, algo],
