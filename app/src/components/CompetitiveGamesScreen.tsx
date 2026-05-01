@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import type { CompetitiveMatch, Player, Game } from '../types';
 import { saveCompetitiveMatch, deleteCompetitiveMatch } from '../store';
 
@@ -81,6 +81,8 @@ function MatchCard({
   onDelete: (id: string) => void;
   onDateChange: (id: string, date: string) => void;
 }) {
+  const [editingDate, setEditingDate] = useState(false);
+  const dateRef = useRef<HTMLInputElement>(null);
   const playerWon = filterPlayer
     ? (match.team1.includes(filterPlayer) ? match.winner === 1 : match.winner === 2)
     : null;
@@ -142,12 +144,32 @@ function MatchCard({
               })}
             </div>
             {isAdmin && (
-              <input
-                type="date"
-                value={match.date}
-                onChange={e => e.target.value && onDateChange(match.id, e.target.value)}
-                className="text-xs text-gray-400 border-0 outline-none bg-transparent cursor-pointer hover:text-blue-500 transition-colors"
-              />
+              editingDate ? (
+                <input
+                  ref={dateRef}
+                  type="date"
+                  defaultValue={match.date}
+                  autoFocus
+                  onBlur={e => {
+                    if (e.target.value && e.target.value !== match.date) onDateChange(match.id, e.target.value);
+                    setEditingDate(false);
+                  }}
+                  onChange={e => {
+                    if (e.target.value && e.target.value !== match.date) {
+                      onDateChange(match.id, e.target.value);
+                      setEditingDate(false);
+                    }
+                  }}
+                  className="text-xs border border-blue-300 rounded-lg px-2 py-1 outline-none focus:border-blue-500"
+                />
+              ) : (
+                <button
+                  onClick={() => setEditingDate(true)}
+                  className="text-xs text-gray-400 hover:text-blue-500 hover:underline transition-colors"
+                >
+                  {match.date} ✏️
+                </button>
+              )
             )}
           </div>
         </div>
