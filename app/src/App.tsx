@@ -45,6 +45,7 @@ function TournamentCard({ t, onClick }: { t: Tournament; onClick: () => void }) 
   const status = getTournamentStatus(t);
   const allMatches = t.levels.flatMap(l => l.groups.flatMap(g => g.matches));
   const completedCount = allMatches.filter(m => m.completed).length;
+  const completedGames = allMatches.filter(m => m.completed).flatMap(m => m.games).length;
   const levelCount = t.levels.length;
   const level1Groups = t.levels[0]?.groups.length ?? 0;
 
@@ -78,7 +79,7 @@ function TournamentCard({ t, onClick }: { t: Tournament; onClick: () => void }) 
           </p>
           {allMatches.length > 0 && (
             <p className="text-xs text-gray-400 mt-1">
-              {completedCount} / {allMatches.length} matches played
+              {completedCount} / {allMatches.length} matches · {completedGames} games played
             </p>
           )}
         </div>
