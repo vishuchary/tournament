@@ -66,6 +66,22 @@ export interface CompetitiveMatch {
   createdAt: number;
 }
 
+export interface TournamentSummary {
+  id: string;
+  name: string;
+  date?: string;
+  format: MatchFormat;
+  setCount?: number;
+  matchType?: 'singles' | 'doubles';
+  status: 'not-started' | 'in-progress' | 'completed';
+  matchCount: number;
+  completedCount: number;
+  completedGames: number;
+  levelCount: number;
+  level1Groups: number;
+  createdAt: number;
+}
+
 export interface PlayerRatingEntry {
   name: string;
   rating: number;

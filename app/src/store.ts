@@ -1,9 +1,9 @@
 import {
   collection, doc, setDoc, deleteDoc,
-  onSnapshot, query, orderBy,
+  onSnapshot, query, orderBy, getDocs,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { Tournament, TournamentLevel, Group, Match, Player, PlayerRatingEntry, CompetitiveMatch } from './types';
+import type { Tournament, TournamentSummary, TournamentLevel, Group, Match, Player, PlayerRatingEntry, CompetitiveMatch } from './types';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'https://backend-five-gules-97.vercel.app';
 
@@ -98,22 +98,68 @@ export async function renamePlayer(oldName: string, newName: string, token: stri
 // Tournaments
 // ---------------------------------------------------------------------------
 
-export function subscribeTournaments(callback: (tournaments: Tournament[]) => void): () => void {
-  const q = query(collection(db, 'tournaments'), orderBy('createdAt', 'desc'));
+export function computeTournamentSummary(t: Tournament): TournamentSummary {
+  const allMatches = t.levels.flatMap(l => l.groups.flatMap(g => g.matches));
+  const completedMatches = allMatches.filter(m => m.completed);
+  const completedCount = completedMatches.length;
+  const completedGames = completedMatches.flatMap(m => m.games).length;
+  let status: TournamentSummary['status'];
+  if (allMatches.length === 0 || completedCount === 0) status = 'not-started';
+  else if (completedCount === allMatches.length) status = 'completed';
+  else status = 'in-progress';
+  return {
+    id: t.id,
+    name: t.name,
+    date: t.date,
+    format: t.format,
+    setCount: t.setCount,
+    matchType: t.matchType,
+    status,
+    matchCount: allMatches.length,
+    completedCount,
+    completedGames,
+    levelCount: t.levels.length,
+    level1Groups: t.levels[0]?.groups.length ?? 0,
+    createdAt: t.createdAt,
+  };
+}
+
+// Real-time subscription to all summaries (lightweight — home screen)
+export function subscribeTournamentSummaries(callback: (summaries: TournamentSummary[]) => void): () => void {
+  const q = query(collection(db, 'tournament_summaries'), orderBy('createdAt', 'desc'));
   return onSnapshot(q, snapshot => {
-    const list = snapshot.docs.map(d => normalizeTournament({ id: d.id, ...d.data() }));
-    callback(list);
+    callback(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as TournamentSummary)));
   });
 }
 
+// Real-time subscription to a single full tournament (tournament view)
+export function subscribeTournament(id: string, callback: (t: Tournament | null) => void): () => void {
+  return onSnapshot(doc(db, 'tournaments', id), snap => {
+    if (!snap.exists()) { callback(null); return; }
+    callback(normalizeTournament({ id: snap.id, ...snap.data() }));
+  });
+}
+
+// One-time fetch of all full tournaments (player stats, migration)
+export async function fetchTournaments(): Promise<Tournament[]> {
+  const q = query(collection(db, 'tournaments'), orderBy('createdAt', 'desc'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => normalizeTournament({ id: d.id, ...d.data() }));
+}
+
 export function saveTournament(t: Tournament): Promise<void> {
-  return setDoc(doc(db, 'tournaments', t.id), t)
-    .catch(err => console.error('Firestore save failed:', err));
+  const summary = computeTournamentSummary(t);
+  return Promise.all([
+    setDoc(doc(db, 'tournaments', t.id), t),
+    setDoc(doc(db, 'tournament_summaries', t.id), summary),
+  ]).then(() => {}).catch(err => console.error('Firestore save failed:', err));
 }
 
 export function deleteTournament(id: string): Promise<void> {
-  return deleteDoc(doc(db, 'tournaments', id))
-    .catch(err => console.error('Firestore delete failed:', err));
+  return Promise.all([
+    deleteDoc(doc(db, 'tournaments', id)),
+    deleteDoc(doc(db, 'tournament_summaries', id)),
+  ]).then(() => {}).catch(err => console.error('Firestore delete failed:', err));
 }
 
 // ---------------------------------------------------------------------------

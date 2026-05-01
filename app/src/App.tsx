@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { auth } from './firebase';
-import type { Tournament, Player, PlayerRatingEntry, CompetitiveMatch } from './types';
+import type { Tournament, TournamentSummary, Player, PlayerRatingEntry, CompetitiveMatch } from './types';
 import {
-  subscribeTournaments, saveTournament, deleteTournament,
+  subscribeTournamentSummaries, subscribeTournament, fetchTournaments,
+  saveTournament, deleteTournament,
   subscribePlayers,
   subscribeBaselineRatings, subscribeAlgoSetting, saveAlgoSetting,
   subscribeTopRankers, saveTopRankers,
@@ -32,23 +33,8 @@ type View =
   | { type: 'playerStats'; name: string; back: NavView }
   | { type: 'ratings' };
 
-function getTournamentStatus(t: Tournament): 'not-started' | 'in-progress' | 'completed' {
-  const allMatches = t.levels.flatMap(l => l.groups.flatMap(g => g.matches));
-  if (allMatches.length === 0) return 'not-started';
-  const completedCount = allMatches.filter(m => m.completed).length;
-  if (completedCount === 0) return 'not-started';
-  if (completedCount === allMatches.length) return 'completed';
-  return 'in-progress';
-}
-
-function TournamentCard({ t, onClick }: { t: Tournament; onClick: () => void }) {
-  const status = getTournamentStatus(t);
-  const allMatches = t.levels.flatMap(l => l.groups.flatMap(g => g.matches));
-  const completedCount = allMatches.filter(m => m.completed).length;
-  const completedGames = allMatches.filter(m => m.completed).flatMap(m => m.games).length;
-  const levelCount = t.levels.length;
-  const level1Groups = t.levels[0]?.groups.length ?? 0;
-
+function TournamentCard({ t, onClick }: { t: TournamentSummary; onClick: () => void }) {
+  const { status, matchCount, completedCount, completedGames, levelCount, level1Groups } = t;
   return (
     <div
       onClick={onClick}
@@ -77,9 +63,9 @@ function TournamentCard({ t, onClick }: { t: Tournament; onClick: () => void }) 
               : `${t.setCount ?? 2} Game${(t.setCount ?? 2) !== 1 ? 's' : ''}`} &middot;{' '}
             {t.date ? new Date(t.date + 'T00:00:00').toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : new Date(t.createdAt).toLocaleDateString()}
           </p>
-          {allMatches.length > 0 && (
+          {matchCount > 0 && (
             <p className="text-xs text-gray-400 mt-1">
-              {completedCount} / {allMatches.length} matches · {completedGames} games played
+              {completedCount} / {matchCount} matches · {completedGames} games played
             </p>
           )}
         </div>
@@ -90,7 +76,17 @@ function TournamentCard({ t, onClick }: { t: Tournament; onClick: () => void }) 
 }
 
 export default function App() {
-  const [tournaments, setTournaments] = useState<Tournament[]>([]);
+  // Lightweight summaries — home screen only
+  const [summaries, setSummaries] = useState<TournamentSummary[]>([]);
+  const [summariesLoaded, setSummariesLoaded] = useState(false);
+
+  // Single full tournament — subscribed only while viewing a tournament
+  const [currentTournament, setCurrentTournament] = useState<Tournament | null>(null);
+
+  // Full tournament list — lazy-fetched when player stats is opened
+  const [allTournaments, setAllTournaments] = useState<Tournament[]>([]);
+  const allTournamentsFetchedRef = useRef(false);
+
   const [players, setPlayers] = useState<Player[]>([]);
   const [competitiveMatches, setCompetitiveMatches] = useState<CompetitiveMatch[]>([]);
   const [baselineRatings, setBaselineRatings] = useState<PlayerRatingEntry[]>([]);
@@ -108,52 +104,90 @@ export default function App() {
     [baselineRatings, algo, topRankers],
   );
 
+  // Auth
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, u => setUser(u));
-    return () => unsubscribeAuth();
+    return onAuthStateChanged(auth, u => setUser(u));
   }, []);
 
+  // Lightweight summaries subscription (home screen)
   useEffect(() => {
-    const unsubscribeTournaments = subscribeTournaments((list) => {
-      setTournaments(list);
+    return subscribeTournamentSummaries(list => {
+      setSummaries(list);
+      setSummariesLoaded(true);
       if (!hasAutoNavigated.current && list.length > 0) {
         hasAutoNavigated.current = true;
-        const inProgress = list.find(t => getTournamentStatus(t) === 'in-progress');
+        const inProgress = list.find(s => s.status === 'in-progress');
         if (inProgress) setView({ type: 'tournament', id: inProgress.id });
       }
     });
-    const unsubscribePlayers = subscribePlayers(setPlayers);
-    const unsubscribeCompetitive = subscribeCompetitiveMatches(setCompetitiveMatches);
-    const unsubscribeBaselineRatings = subscribeBaselineRatings(setBaselineRatings);
-    const unsubscribeAlgo = subscribeAlgoSetting(setAlgo);
-    const unsubscribeTopRankers = subscribeTopRankers(setTopRankers);
+  }, []);
+
+  // One-time migration: if summaries are empty but full tournaments exist, create summaries
+  useEffect(() => {
+    if (!summariesLoaded || summaries.length > 0) return;
+    fetchTournaments().then(list => {
+      list.forEach(t => saveTournament(t)); // saveTournament writes summary too
+    });
+  }, [summariesLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Other subscriptions
+  useEffect(() => {
+    const unsubPlayers = subscribePlayers(setPlayers);
+    const unsubCompetitive = subscribeCompetitiveMatches(setCompetitiveMatches);
+    const unsubRatings = subscribeBaselineRatings(setBaselineRatings);
+    const unsubAlgo = subscribeAlgoSetting(setAlgo);
+    const unsubTopRankers = subscribeTopRankers(setTopRankers);
     return () => {
-      unsubscribeTournaments();
-      unsubscribePlayers();
-      unsubscribeCompetitive();
-      unsubscribeBaselineRatings();
-      unsubscribeAlgo();
-      unsubscribeTopRankers();
+      unsubPlayers();
+      unsubCompetitive();
+      unsubRatings();
+      unsubAlgo();
+      unsubTopRankers();
     };
   }, []);
+
+  // Single-tournament subscription — active only while in tournament view
+  const tournamentId = view.type === 'tournament' ? view.id : null;
+  useEffect(() => {
+    if (!tournamentId) {
+      setCurrentTournament(null);
+      return;
+    }
+    return subscribeTournament(tournamentId, setCurrentTournament);
+  }, [tournamentId]);
 
   async function getToken(): Promise<string> {
     return (await user?.getIdToken()) ?? '';
   }
 
+  async function ensureAllTournaments(): Promise<Tournament[]> {
+    if (allTournamentsFetchedRef.current) return allTournaments;
+    allTournamentsFetchedRef.current = true;
+    const list = await fetchTournaments();
+    setAllTournaments(list);
+    return list;
+  }
+
   async function handleCreate(t: Tournament) {
-    setTournaments(prev => [t, ...prev]);
+    setCurrentTournament(t); // optimistic — subscription will confirm
     await saveTournament(t);
     setView({ type: 'tournament', id: t.id });
   }
 
   async function handleUpdate(t: Tournament) {
-    setTournaments(prev => prev.map(x => x.id === t.id ? t : x));
+    setCurrentTournament(t); // optimistic
     await saveTournament(t);
+    // Keep allTournaments in sync if loaded
+    if (allTournamentsFetchedRef.current) {
+      setAllTournaments(prev => prev.map(x => x.id === t.id ? t : x));
+    }
   }
 
   async function handleDelete(id: string) {
     await deleteTournament(id);
+    if (allTournamentsFetchedRef.current) {
+      setAllTournaments(prev => prev.filter(x => x.id !== id));
+    }
     setView({ type: 'home' });
   }
 
@@ -173,7 +207,7 @@ export default function App() {
   if (view.type === 'new') {
     return (
       <TournamentSetup
-        seq={tournaments.length + 1}
+        seq={summaries.length + 1}
         players={players}
         onCreate={handleCreate}
         onCancel={() => setView({ type: 'home' })}
@@ -181,16 +215,27 @@ export default function App() {
     );
   }
 
-
   if (view.type === 'players') {
-    return <PlayersScreen players={players} isAdmin={isAdmin} topPlayerNames={topPlayerNames} onBack={() => setView({ type: 'home' })} getToken={getToken} onPlayerClick={name => setView({ type: 'playerStats', name, back: { type: 'players' } })} />;
+    return (
+      <PlayersScreen
+        players={players}
+        isAdmin={isAdmin}
+        topPlayerNames={topPlayerNames}
+        onBack={() => setView({ type: 'home' })}
+        getToken={getToken}
+        onPlayerClick={name => {
+          ensureAllTournaments();
+          setView({ type: 'playerStats', name, back: { type: 'players' } });
+        }}
+      />
+    );
   }
 
   if (view.type === 'playerStats') {
     return (
       <PlayerStatsScreen
         playerName={view.name}
-        tournaments={tournaments}
+        tournaments={allTournaments}
         competitiveMatches={competitiveMatches}
         ratings={baselineRatings}
         algo={algo}
@@ -222,14 +267,17 @@ export default function App() {
         onAlgoChange={handleAlgoChange}
         onTopRankersChange={handleTopRankersChange}
         onRecompute={handleRecompute}
-        onPlayerClick={name => setView({ type: 'playerStats', name, back: { type: 'ratings' } })}
+        onPlayerClick={name => {
+          ensureAllTournaments();
+          setView({ type: 'playerStats', name, back: { type: 'ratings' } });
+        }}
       />
     );
   }
 
   if (view.type === 'tournament') {
-    const t = tournaments.find(x => x.id === view.id);
-    if (!t) return null;
+    if (!currentTournament) return null;
+    const t = currentTournament;
     return (
       <TournamentView
         tournament={t}
@@ -239,13 +287,16 @@ export default function App() {
         onDelete={() => handleDelete(t.id)}
         onBack={() => setView({ type: 'home' })}
         onRequestAdmin={() => setShowAdminLogin(true)}
-        onPlayerClick={name => setView({ type: 'playerStats', name, back: { type: 'tournament', id: t.id } })}
+        onPlayerClick={name => {
+          ensureAllTournaments();
+          setView({ type: 'playerStats', name, back: { type: 'tournament', id: t.id } });
+        }}
       />
     );
   }
 
-  const inProgress = tournaments.filter(t => getTournamentStatus(t) === 'in-progress');
-  const history = tournaments.filter(t => getTournamentStatus(t) !== 'in-progress');
+  const inProgress = summaries.filter(s => s.status === 'in-progress');
+  const history = summaries.filter(s => s.status !== 'in-progress');
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -301,14 +352,12 @@ export default function App() {
               Players {players.length > 0 && <span className="text-gray-400">({players.length})</span>}
             </button>
             {isAdmin && (
-              <>
-                <button
-                  onClick={() => setView({ type: 'new' })}
-                  className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition-colors"
-                >
-                  + New
-                </button>
-              </>
+              <button
+                onClick={() => setView({ type: 'new' })}
+                className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+              >
+                + New
+              </button>
             )}
           </div>
         </div>
@@ -339,7 +388,7 @@ export default function App() {
           </section>
 
           {/* Tournaments */}
-          {tournaments.length === 0 && inProgress.length === 0 ? (
+          {summaries.length === 0 ? (
             isAdmin ? (
               <div className="text-center py-12 text-gray-400">
                 <p className="text-xl">No tournaments yet</p>
@@ -352,8 +401,8 @@ export default function App() {
                 <section>
                   <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Tournaments · In Progress</h2>
                   <div className="grid gap-3">
-                    {inProgress.map(t => (
-                      <TournamentCard key={t.id} t={t} onClick={() => setView({ type: 'tournament', id: t.id })} />
+                    {inProgress.map(s => (
+                      <TournamentCard key={s.id} t={s} onClick={() => setView({ type: 'tournament', id: s.id })} />
                     ))}
                   </div>
                 </section>
@@ -362,8 +411,8 @@ export default function App() {
                 <section>
                   <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Tournaments · History</h2>
                   <div className="grid gap-3">
-                    {history.map(t => (
-                      <TournamentCard key={t.id} t={t} onClick={() => setView({ type: 'tournament', id: t.id })} />
+                    {history.map(s => (
+                      <TournamentCard key={s.id} t={s} onClick={() => setView({ type: 'tournament', id: s.id })} />
                     ))}
                   </div>
                 </section>
