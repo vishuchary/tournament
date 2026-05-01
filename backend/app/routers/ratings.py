@@ -161,9 +161,11 @@ def recompute_ratings():
         competitive_games = _competitive_matches_as_games(db)
         games = tournament_games + competitive_games
 
-        # Delete all stale rating entries first so removed matches don't leave ghosts
+        # Delete stale entries and any legacy baseline_ratings collection
         batch = db.batch()
         for doc in db.collection('ratings').stream():
+            batch.delete(doc.reference)
+        for doc in db.collection('baseline_ratings').stream():
             batch.delete(doc.reference)
 
         for gtype in ('singles', 'doubles'):
