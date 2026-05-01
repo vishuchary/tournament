@@ -2,3 +2,4 @@
 *.local
 backend/.env.production
 backend/.env.local
+/.vercel

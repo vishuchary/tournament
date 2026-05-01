@@ -63,7 +63,7 @@ export async function triggerBaselineRatingsRecompute(token: string): Promise<vo
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45000);
   try {
-    const res = await fetch(`${BACKEND_URL}/baseline/ratings/recompute`, {
+    const res = await fetch(`${BACKEND_URL}/ratings/recompute`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       signal: controller.signal,
@@ -148,13 +148,14 @@ export function deleteCompetitiveMatch(id: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Baseline ratings (written by backend Python, read here)
+// ---------------------------------------------------------------------------
+// Ratings (written by backend Python, read here)
 // ---------------------------------------------------------------------------
 
 export function subscribeBaselineRatings(
   callback: (ratings: PlayerRatingEntry[]) => void,
 ): () => void {
-  return onSnapshot(collection(db, 'baseline_ratings'), snapshot => {
+  return onSnapshot(collection(db, 'ratings'), snapshot => {
     callback(snapshot.docs.map(d => d.data() as PlayerRatingEntry));
   });
 }
@@ -166,13 +167,13 @@ export function subscribeBaselineRatings(
 export type RatingAlgo = 'rc' | 'glicko2';
 
 export function subscribeAlgoSetting(callback: (algo: RatingAlgo) => void): () => void {
-  return onSnapshot(doc(db, 'settings', 'baseline_algo'), snap => {
+  return onSnapshot(doc(db, 'settings', 'algo'), snap => {
     const data = snap.data();
     callback((data?.algo as RatingAlgo) ?? 'rc');
   });
 }
 
 export function saveAlgoSetting(algo: RatingAlgo): Promise<void> {
-  return setDoc(doc(db, 'settings', 'baseline_algo'), { algo })
+  return setDoc(doc(db, 'settings', 'algo'), { algo })
     .catch(err => console.error('Firestore save algo setting failed:', err));
 }

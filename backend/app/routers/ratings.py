@@ -6,7 +6,7 @@ from ..services.ratings_engine import compute_rc_ratings, compute_glicko2_rating
 from ..models.tournament import BaselineGame, Game, PlayerRatingEntry, Tournament
 from ..middleware.auth import verify_token
 
-router = APIRouter(prefix='/baseline', tags=['baseline'])
+router = APIRouter(prefix='/ratings', tags=['ratings'])
 
 
 def _sanitize(name: str) -> str:
@@ -153,8 +153,8 @@ def _competitive_matches_as_games(db) -> list[BaselineGame]:
     return result
 
 
-@router.post('/ratings/recompute', response_model=dict, dependencies=[Depends(verify_token)])
-def recompute_baseline_ratings():
+@router.post('/recompute', response_model=dict, dependencies=[Depends(verify_token)])
+def recompute_ratings():
     try:
         db = get_firestore()
         tournament_games = _tournament_matches_as_games(db)
@@ -164,13 +164,13 @@ def recompute_baseline_ratings():
         batch = db.batch()
         for gtype in ('singles', 'doubles'):
             for algo in ('rc', 'glicko2'):
-                ratings: list[PlayerRatingEntry] = (
+                computed: list[PlayerRatingEntry] = (
                     compute_rc_ratings(games, gtype) if algo == 'rc'
                     else compute_glicko2_ratings(games, gtype)
                 )
-                for r in ratings:
+                for r in computed:
                     key = _sanitize(r.name) + f'_{gtype}_{algo}'
-                    ref = db.collection('baseline_ratings').document(key)
+                    ref = db.collection('ratings').document(key)
                     data = r.model_dump()
                     data['algo'] = algo
                     data['type'] = gtype

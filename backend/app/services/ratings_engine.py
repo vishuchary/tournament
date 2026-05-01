@@ -1,8 +1,12 @@
 """
-Baseline rating algorithms: Ratings Central (RC) and Glicko-2.
-Ported from app/src/rankings.ts.
+Rating algorithms: Ratings Central (RC) and Glicko-2.
+Both use period-based batch updates: games are grouped by date, and all
+results within a period are processed simultaneously using pre-period ratings.
+This matches the design intent of RC/Glicko and avoids the instability caused
+by sequential per-game updates with high initial uncertainty.
 """
 import math
+from itertools import groupby
 from ..models.tournament import BaselineGame, PlayerRatingEntry
 
 # ---------------------------------------------------------------------------
@@ -28,7 +32,9 @@ def _rc_update(rating: float, sd: float, results: list[dict]) -> tuple[float, fl
     if not results:
         return rating, sd
     d_sq_inv = RC_ALPHA ** 2 * sum(
-        _rc_g(r['sd_opp']) ** 2 * _rc_e(rating, r['r_opp'], r['sd_opp']) * (1 - _rc_e(rating, r['r_opp'], r['sd_opp']))
+        _rc_g(r['sd_opp']) ** 2
+        * _rc_e(rating, r['r_opp'], r['sd_opp'])
+        * (1 - _rc_e(rating, r['r_opp'], r['sd_opp']))
         for r in results
     )
     if d_sq_inv == 0:
@@ -38,13 +44,12 @@ def _rc_update(rating: float, sd: float, results: list[dict]) -> tuple[float, fl
         _rc_g(r['sd_opp']) * (r['score'] - _rc_e(rating, r['r_opp'], r['sd_opp']))
         for r in results
     )
-    new_rating = rating + delta
-    new_sd = max(math.sqrt(1.0 / (1.0 / (sd ** 2) + 1.0 / d_sq)), RC_MIN_SD)
-    return new_rating, new_sd
+    new_sd = max(math.sqrt(1.0 / (1.0 / sd ** 2 + 1.0 / d_sq)), RC_MIN_SD)
+    return rating + delta, new_sd
 
 
-def _apply_rc_game(state: dict[str, PlayerRatingEntry], game: BaselineGame) -> None:
-    team1_won = game.winner == 1
+def compute_rc_ratings(games: list[BaselineGame], gtype: str) -> list[PlayerRatingEntry]:
+    state: dict[str, PlayerRatingEntry] = {}
 
     def get(name: str) -> PlayerRatingEntry:
         if name not in state:
@@ -54,40 +59,63 @@ def _apply_rc_game(state: dict[str, PlayerRatingEntry], game: BaselineGame) -> N
             )
         return state[name]
 
-    pre: dict[str, PlayerRatingEntry] = {}
-    for n in game.team1 + game.team2:
-        e = get(n)
-        pre[n] = e.model_copy()
+    filtered = sorted(
+        [g for g in games if g.type == gtype],
+        key=lambda g: (g.date or '', g.createdAt),
+    )
 
-    def update(name: str, opponents: list[str], won: bool) -> None:
-        p = pre[name]
-        results = [
-            {'r_opp': pre[opp].rating, 'sd_opp': pre[opp].uncertainty, 'score': 1.0 if won else 0.0}
-            for opp in opponents
-        ]
-        new_r, new_sd = _rc_update(p.rating, p.uncertainty, results)
-        cur = get(name)
-        state[name] = PlayerRatingEntry(
-            name=name, rating=new_r, uncertainty=new_sd,
-            won=cur.won + (1 if won else 0),
-            lost=cur.lost + (0 if won else 1),
-            gamesPlayed=cur.gamesPlayed + 1,
-        )
+    for _, period_iter in groupby(filtered, key=lambda g: g.date or ''):
+        period = list(period_iter)
 
-    if game.type != 'doubles':
-        update(game.team1[0], game.team2, team1_won)
-        update(game.team2[0], game.team1, not team1_won)
-    else:
-        for n in game.team1:
-            update(n, game.team2, team1_won)
-        for n in game.team2:
-            update(n, game.team1, not team1_won)
+        # Snapshot all ratings at the start of this period
+        snap: dict[str, PlayerRatingEntry] = {}
+        for g in period:
+            for name in g.team1 + g.team2:
+                if name not in snap:
+                    snap[name] = get(name).model_copy()
 
+        # Collect every result per player using snapshot (pre-period) opponent ratings
+        results_map: dict[str, list[dict]] = {}
+        wins_map: dict[str, int] = {}
+        losses_map: dict[str, int] = {}
 
-def compute_rc_ratings(games: list[BaselineGame], gtype: str) -> list[PlayerRatingEntry]:
-    state: dict[str, PlayerRatingEntry] = {}
-    for g in sorted((g for g in games if g.type == gtype), key=lambda g: g.createdAt):
-        _apply_rc_game(state, g)
+        for g in period:
+            team1_won = g.winner == 1
+            for my_team, opp_team, won in [
+                (g.team1, g.team2, team1_won),
+                (g.team2, g.team1, not team1_won),
+            ]:
+                # Average the opposing team into one virtual opponent (1 result per match)
+                opp_snaps = [snap.get(opp) or get(opp) for opp in opp_team]
+                avg_r = sum(s.rating for s in opp_snaps) / len(opp_snaps)
+                avg_sd = sum(s.uncertainty for s in opp_snaps) / len(opp_snaps)
+                for name in my_team:
+                    if name not in results_map:
+                        results_map[name] = []
+                        wins_map[name] = 0
+                        losses_map[name] = 0
+                    results_map[name].append({
+                        'r_opp': avg_r,
+                        'sd_opp': avg_sd,
+                        'score': 1.0 if won else 0.0,
+                    })
+                    if won:
+                        wins_map[name] += 1
+                    else:
+                        losses_map[name] += 1
+
+        # One batch update per player for the whole period
+        for name, results in results_map.items():
+            p = snap[name]
+            new_r, new_sd = _rc_update(p.rating, p.uncertainty, results)
+            cur = get(name)
+            state[name] = PlayerRatingEntry(
+                name=name, rating=new_r, uncertainty=new_sd,
+                won=cur.won + wins_map[name],
+                lost=cur.lost + losses_map[name],
+                gamesPlayed=cur.gamesPlayed + wins_map[name] + losses_map[name],
+            )
+
     return sorted(state.values(), key=lambda r: -r.rating)
 
 
@@ -123,9 +151,8 @@ def _g2_new_sigma(phi: float, sigma: float, v: float, delta: float) -> float:
         return (ex * (d_sq - phi_sq - v - ex)) / (2 * (phi_sq + v + ex) ** 2) - (x - a) / (G2_TAU ** 2)
 
     A = a
-    if d_sq > phi_sq + v:
-        B = math.log(d_sq - phi_sq - v)
-    else:
+    B = math.log(d_sq - phi_sq - v) if d_sq > phi_sq + v else a - G2_TAU
+    if not d_sq > phi_sq + v:
         k = 1
         while f(a - k * G2_TAU) < 0:
             k += 1
@@ -145,11 +172,12 @@ def _g2_new_sigma(phi: float, sigma: float, v: float, delta: float) -> float:
 
 def _g2_update(mu: float, phi: float, sigma: float, results: list[dict]) -> tuple[float, float, float]:
     if not results:
-        phi_star = min(math.sqrt(phi ** 2 + sigma ** 2), G2_INIT_RD / G2_SCALE)
-        return mu, phi_star, sigma
+        return mu, math.sqrt(phi ** 2 + sigma ** 2), sigma
 
     v = 1.0 / sum(
-        _g2_g(r['phi_j']) ** 2 * _g2_e(mu, r['mu_j'], r['phi_j']) * (1 - _g2_e(mu, r['mu_j'], r['phi_j']))
+        _g2_g(r['phi_j']) ** 2
+        * _g2_e(mu, r['mu_j'], r['phi_j'])
+        * (1 - _g2_e(mu, r['mu_j'], r['phi_j']))
         for r in results
     )
     delta = v * sum(
@@ -166,59 +194,79 @@ def _g2_update(mu: float, phi: float, sigma: float, results: list[dict]) -> tupl
     return new_mu, new_phi, new_sigma
 
 
-def _apply_g2_game(
-    state: dict[str, tuple[PlayerRatingEntry, tuple[float, float, float]]],
-    game: BaselineGame,
-) -> None:
-    team1_won = game.winner == 1
+def compute_glicko2_ratings(games: list[BaselineGame], gtype: str) -> list[PlayerRatingEntry]:
+    # state: name → (entry, (mu, phi, sigma))
+    state: dict[str, tuple[PlayerRatingEntry, tuple[float, float, float]]] = {}
 
     def get(name: str) -> tuple[PlayerRatingEntry, tuple[float, float, float]]:
         if name not in state:
             g2 = (0.0, G2_INIT_RD / G2_SCALE, G2_INIT_SIGMA)
-            entry = PlayerRatingEntry(
+            state[name] = (PlayerRatingEntry(
                 name=name, rating=G2_INIT_R, uncertainty=G2_INIT_RD,
                 volatility=G2_INIT_SIGMA, won=0, lost=0, gamesPlayed=0,
-            )
-            state[name] = (entry, g2)
+            ), g2)
         return state[name]
 
-    pre: dict[str, tuple[PlayerRatingEntry, tuple[float, float, float]]] = {}
-    for n in game.team1 + game.team2:
-        e, g2 = get(n)
-        pre[n] = (e.model_copy(), g2)
+    filtered = sorted(
+        [g for g in games if g.type == gtype],
+        key=lambda g: (g.date or '', g.createdAt),
+    )
 
-    def update(name: str, opponents: list[str], won: bool) -> None:
-        _, (mu, phi, sigma) = pre[name]
-        results = [
-            {'mu_j': pre[opp][1][0], 'phi_j': pre[opp][1][1], 'score': 1.0 if won else 0.0}
-            for opp in opponents
-        ]
-        new_mu, new_phi, new_sigma = _g2_update(mu, phi, sigma, results)
-        new_rating = G2_SCALE * new_mu + G2_INIT_R
-        new_rd = G2_SCALE * new_phi
-        cur_entry, _ = get(name)
-        state[name] = (
-            PlayerRatingEntry(
-                name=name, rating=new_rating, uncertainty=new_rd, volatility=new_sigma,
-                won=cur_entry.won + (1 if won else 0),
-                lost=cur_entry.lost + (0 if won else 1),
-                gamesPlayed=cur_entry.gamesPlayed + 1,
-            ),
-            (new_mu, new_phi, new_sigma),
-        )
+    for _, period_iter in groupby(filtered, key=lambda g: g.date or ''):
+        period = list(period_iter)
 
-    if game.type != 'doubles':
-        update(game.team1[0], game.team2, team1_won)
-        update(game.team2[0], game.team1, not team1_won)
-    else:
-        for n in game.team1:
-            update(n, game.team2, team1_won)
-        for n in game.team2:
-            update(n, game.team1, not team1_won)
+        # Snapshot g2 internal state at start of period
+        snap_g2: dict[str, tuple[float, float, float]] = {}
+        for g in period:
+            for name in g.team1 + g.team2:
+                if name not in snap_g2:
+                    snap_g2[name] = get(name)[1]
 
+        # Collect results per player using snapshot opponent g2 state
+        results_map: dict[str, list[dict]] = {}
+        wins_map: dict[str, int] = {}
+        losses_map: dict[str, int] = {}
 
-def compute_glicko2_ratings(games: list[BaselineGame], gtype: str) -> list[PlayerRatingEntry]:
-    state: dict[str, tuple[PlayerRatingEntry, tuple[float, float, float]]] = {}
-    for g in sorted((g for g in games if g.type == gtype), key=lambda g: g.createdAt):
-        _apply_g2_game(state, g)
+        for g in period:
+            team1_won = g.winner == 1
+            for my_team, opp_team, won in [
+                (g.team1, g.team2, team1_won),
+                (g.team2, g.team1, not team1_won),
+            ]:
+                # Average the opposing team into one virtual opponent (1 result per match)
+                opp_g2s = [snap_g2.get(opp) or get(opp)[1] for opp in opp_team]
+                avg_mu = sum(g[0] for g in opp_g2s) / len(opp_g2s)
+                avg_phi = sum(g[1] for g in opp_g2s) / len(opp_g2s)
+                for name in my_team:
+                    if name not in results_map:
+                        results_map[name] = []
+                        wins_map[name] = 0
+                        losses_map[name] = 0
+                    results_map[name].append({
+                        'mu_j': avg_mu,
+                        'phi_j': avg_phi,
+                        'score': 1.0 if won else 0.0,
+                    })
+                    if won:
+                        wins_map[name] += 1
+                    else:
+                        losses_map[name] += 1
+
+        # One batch update per player
+        for name, results in results_map.items():
+            mu, phi, sigma = snap_g2[name]
+            new_mu, new_phi, new_sigma = _g2_update(mu, phi, sigma, results)
+            new_rating = G2_SCALE * new_mu + G2_INIT_R
+            new_rd = G2_SCALE * new_phi
+            cur_entry, _ = get(name)
+            state[name] = (
+                PlayerRatingEntry(
+                    name=name, rating=new_rating, uncertainty=new_rd, volatility=new_sigma,
+                    won=cur_entry.won + wins_map[name],
+                    lost=cur_entry.lost + losses_map[name],
+                    gamesPlayed=cur_entry.gamesPlayed + wins_map[name] + losses_map[name],
+                ),
+                (new_mu, new_phi, new_sigma),
+            )
+
     return sorted((v[0] for v in state.values()), key=lambda r: -r.rating)
