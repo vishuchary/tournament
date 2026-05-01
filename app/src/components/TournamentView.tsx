@@ -15,6 +15,7 @@ interface Props {
   onDelete: () => void;
   onBack: () => void;
   onRequestAdmin: () => void;
+  onPlayerClick?: (name: string) => void;
 }
 
 function serpentineIdx(teamIdx: number, groupCount: number): number {
@@ -267,7 +268,7 @@ function AdvanceSetup({
   );
 }
 
-export default function TournamentView({ tournament, players, isAdmin, onUpdate, onDelete, onBack, onRequestAdmin }: Props) {
+export default function TournamentView({ tournament, players, isAdmin, onUpdate, onDelete, onBack, onRequestAdmin, onPlayerClick }: Props) {
   const [viewLevel, setViewLevel] = useState(tournament.levels.length - 1);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(
     tournament.levels[tournament.levels.length - 1]?.groups[0]?.id ?? null
@@ -577,6 +578,7 @@ export default function TournamentView({ tournament, players, isAdmin, onUpdate,
             players={players}
             isLocked={isLocked}
             onUpdate={g => handleGroupUpdate(viewLevel, g)}
+            onPlayerClick={onPlayerClick}
           />
         )}
 
@@ -591,7 +593,15 @@ export default function TournamentView({ tournament, players, isAdmin, onUpdate,
                   {tournament.name} Champions
                 </p>
                 <p className="text-3xl font-bold text-yellow-900 mb-1">
-                  {winner.players.filter(Boolean).join(' & ')}
+                  {winner.players.filter(Boolean).map((p, pi) => (
+                    <span key={pi}>
+                      {pi > 0 && ' & '}
+                      <span
+                        className={onPlayerClick ? 'cursor-pointer hover:opacity-70' : ''}
+                        onClick={() => onPlayerClick?.(p)}
+                      >{p}</span>
+                    </span>
+                  ))}
                 </p>
                 {winner.players.length > 1 && (
                   <p className="text-sm text-yellow-700 mb-4">
@@ -604,7 +614,15 @@ export default function TournamentView({ tournament, players, isAdmin, onUpdate,
                     <div className="text-left">
                       <p className="text-xs text-yellow-700 font-medium">Runner-up</p>
                       <p className="text-sm font-semibold text-yellow-900">
-                        {runnerUp.players.filter(Boolean).join(' & ')}
+                        {runnerUp.players.filter(Boolean).map((p, pi) => (
+                          <span key={pi}>
+                            {pi > 0 && ' & '}
+                            <span
+                              className={onPlayerClick ? 'cursor-pointer hover:opacity-70' : ''}
+                              onClick={() => onPlayerClick?.(p)}
+                            >{p}</span>
+                          </span>
+                        ))}
                       </p>
                     </div>
                   </div>

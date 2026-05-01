@@ -12,6 +12,7 @@ interface Props {
   players?: Player[];
   isLocked?: boolean;
   onUpdate: (g: Group) => void;
+  onPlayerClick?: (name: string) => void;
 }
 
 type PickerTarget = { teamId: string; playerIdx: number };
@@ -62,7 +63,7 @@ function InlineInput({
   );
 }
 
-export default function GroupView({ group, allGroups, format, setCount, players = [], isLocked = false, onUpdate }: Props) {
+export default function GroupView({ group, allGroups, format, setCount, players = [], isLocked = false, onUpdate, onPlayerClick }: Props) {
   const [tab, setTab] = useState<Tab>('matches');
   const [editMatch, setEditMatch] = useState<Match | null>(null);
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null);
@@ -250,7 +251,17 @@ export default function GroupView({ group, allGroups, format, setCount, players 
                   <td className="px-4 py-3">
                     <div className="font-medium text-gray-900">{teamDisplayName(s.team)}</div>
                     {s.team.players.length > 0 && (
-                      <div className="text-xs text-gray-400">{s.team.players.join(' / ')}</div>
+                      <div className="text-xs text-gray-400">
+                        {s.team.players.filter(Boolean).map((p, pi) => (
+                          <span key={pi}>
+                            {pi > 0 && ' / '}
+                            <span
+                              className={onPlayerClick ? 'cursor-pointer hover:text-blue-600 hover:underline' : ''}
+                              onClick={() => onPlayerClick?.(p)}
+                            >{p}</span>
+                          </span>
+                        ))}
+                      </div>
                     )}
                   </td>
                   <td className="px-4 py-3 text-center text-gray-600">{format === 'sets' ? s.matchesPlayed : s.gameWins + s.gameLosses}</td>
@@ -301,7 +312,10 @@ export default function GroupView({ group, allGroups, format, setCount, players 
                         {team.players.length > 1 ? `Player ${pi + 1}` : 'Player'}
                       </p>
                       {isLocked ? (
-                        <span className="text-sm text-gray-700">{player}</span>
+                        <span
+                          className={`text-sm text-gray-700 ${onPlayerClick && player ? 'cursor-pointer hover:text-blue-600 hover:underline' : ''}`}
+                          onClick={() => player && onPlayerClick?.(player)}
+                        >{player}</span>
                       ) : (
                         <button
                           onClick={() => setPickerTarget({ teamId: team.id, playerIdx: pi })}

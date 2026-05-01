@@ -21,13 +21,15 @@ import CompetitiveGamesScreen from './components/CompetitiveGamesScreen';
 import AdminLogin from './components/AdminLogin';
 import './index.css';
 
+type NavView = { type: 'home' } | { type: 'tournament'; id: string } | { type: 'competitive' } | { type: 'players' } | { type: 'ratings' };
+
 type View =
   | { type: 'home' }
   | { type: 'new' }
   | { type: 'tournament'; id: string }
   | { type: 'competitive' }
   | { type: 'players' }
-  | { type: 'playerStats'; name: string; from: 'ratings' | 'players' }
+  | { type: 'playerStats'; name: string; back: NavView }
   | { type: 'ratings' };
 
 function getTournamentStatus(t: Tournament): 'not-started' | 'in-progress' | 'completed' {
@@ -180,7 +182,7 @@ export default function App() {
 
 
   if (view.type === 'players') {
-    return <PlayersScreen players={players} isAdmin={isAdmin} topPlayerNames={topPlayerNames} onBack={() => setView({ type: 'home' })} getToken={getToken} onPlayerClick={name => setView({ type: 'playerStats', name, from: 'players' })} />;
+    return <PlayersScreen players={players} isAdmin={isAdmin} topPlayerNames={topPlayerNames} onBack={() => setView({ type: 'home' })} getToken={getToken} onPlayerClick={name => setView({ type: 'playerStats', name, back: { type: 'players' } })} />;
   }
 
   if (view.type === 'playerStats') {
@@ -189,7 +191,7 @@ export default function App() {
         playerName={view.name}
         tournaments={tournaments}
         competitiveMatches={competitiveMatches}
-        onBack={() => setView({ type: view.from })}
+        onBack={() => setView(view.back)}
       />
     );
   }
@@ -217,7 +219,7 @@ export default function App() {
         onAlgoChange={handleAlgoChange}
         onTopRankersChange={handleTopRankersChange}
         onRecompute={handleRecompute}
-        onPlayerClick={name => setView({ type: 'playerStats', name, from: 'ratings' })}
+        onPlayerClick={name => setView({ type: 'playerStats', name, back: { type: 'ratings' } })}
       />
     );
   }
@@ -234,6 +236,7 @@ export default function App() {
         onDelete={() => handleDelete(t.id)}
         onBack={() => setView({ type: 'home' })}
         onRequestAdmin={() => setShowAdminLogin(true)}
+        onPlayerClick={name => setView({ type: 'playerStats', name, back: { type: 'tournament', id: t.id } })}
       />
     );
   }
