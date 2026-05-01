@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import type { Player } from '../types';
-import { savePlayer, deletePlayer } from '../store';
+import { savePlayer, deletePlayer, renamePlayer } from '../store';
 
 interface Props {
   players: Player[];
   isAdmin: boolean;
   onBack: () => void;
+  getToken: () => Promise<string>;
 }
 
 function uid() {
@@ -164,17 +165,38 @@ if (p.sex) parts.push(p.sex.charAt(0).toUpperCase() + p.sex.slice(1));
   return parts.join(' · ');
 }
 
-export default function PlayersScreen({ players, isAdmin, onBack }: Props) {
+export default function PlayersScreen({ players, isAdmin, onBack, getToken }: Props) {
   const [formState, setFormState] = useState<
     | { mode: 'add' }
     | { mode: 'edit'; player: Player }
     | null
   >(null);
+  const [renaming, setRenaming] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
 
-  function handleSave(draft: PlayerDraft) {
+  async function handleSave(draft: PlayerDraft) {
     if (!draft.name.trim()) return;
-    const id = formState?.mode === 'edit' ? formState.player.id : uid();
-    savePlayer(draftToPlayer(id, draft));
+    const newName = draft.name.trim();
+    if (formState?.mode === 'edit') {
+      const oldName = formState.player.name;
+      const id = formState.player.id;
+      if (oldName !== newName) {
+        setRenaming(true);
+        setRenameError(null);
+        try {
+          const token = await getToken();
+          await renamePlayer(oldName, newName, token);
+        } catch (e) {
+          setRenameError(e instanceof Error ? e.message : 'Rename failed');
+          setRenaming(false);
+          return;
+        }
+        setRenaming(false);
+      }
+      savePlayer(draftToPlayer(id, draft));
+    } else {
+      savePlayer(draftToPlayer(uid(), draft));
+    }
     setFormState(null);
   }
 
@@ -196,6 +218,16 @@ export default function PlayersScreen({ players, isAdmin, onBack }: Props) {
       )}
 
       <div className="max-w-xl mx-auto p-4">
+        {renaming && (
+          <div className="mb-4 bg-blue-50 border border-blue-200 text-blue-700 text-sm px-4 py-2.5 rounded-xl">
+            Renaming player everywhere…
+          </div>
+        )}
+        {renameError && (
+          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2.5 rounded-xl break-all">
+            {renameError}
+          </div>
+        )}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <button onClick={onBack} className="text-gray-500 hover:text-gray-700 text-sm">← Back</button>

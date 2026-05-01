@@ -1,6 +1,7 @@
 import math
 import re
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from ..services.firestore_client import get_firestore
 from ..services.ratings_engine import compute_rc_ratings, compute_glicko2_ratings
 from ..models.tournament import RatingGame, Game, PlayerRatingEntry, Tournament
@@ -195,5 +196,65 @@ def recompute_ratings():
         return {'status': 'ok', 'tournament_games': len(tournament_games), 'competitive_games': len(competitive_games)}
     except Exception as e:
         import traceback
-        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=f'{e}\n{traceback.format_exc()}')
+
+
+class RenameRequest(BaseModel):
+    oldName: str
+    newName: str
+
+
+def _replace_name(obj, old: str, new: str):
+    """Recursively replace a player name string anywhere in a Firestore document."""
+    if isinstance(obj, dict):
+        return {k: _replace_name(v, old, new) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_replace_name(item, old, new) for item in obj]
+    if isinstance(obj, str) and obj == old:
+        return new
+    return obj
+
+
+@router.post('/rename-player', response_model=dict, dependencies=[Depends(verify_token)])
+def rename_player(req: RenameRequest):
+    try:
+        import traceback
+        old, new = req.oldName.strip(), req.newName.strip()
+        if not old or not new or old == new:
+            raise HTTPException(status_code=400, detail='Invalid names')
+        db = get_firestore()
+        batch = db.batch()
+
+        # players collection
+        for doc in db.collection('players').stream():
+            d = doc.to_dict()
+            if d.get('name') == old:
+                batch.update(doc.reference, {'name': new})
+
+        # tournaments — recursive replacement across all nested structure
+        for doc in db.collection('tournaments').stream():
+            d = doc.to_dict()
+            updated = _replace_name(d, old, new)
+            if updated != d:
+                batch.set(doc.reference, updated)
+
+        # competitive_matches
+        for doc in db.collection('competitive_matches').stream():
+            d = doc.to_dict()
+            t1 = [new if p == old else p for p in d.get('team1', [])]
+            t2 = [new if p == old else p for p in d.get('team2', [])]
+            if t1 != d.get('team1') or t2 != d.get('team2'):
+                batch.update(doc.reference, {'team1': t1, 'team2': t2})
+
+        # ratings — delete old entries (recompute will regenerate with new name)
+        for doc in db.collection('ratings').stream():
+            if doc.to_dict().get('name') == old:
+                batch.delete(doc.reference)
+
+        batch.commit()
+        return {'status': 'ok', 'oldName': old, 'newName': new}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
         raise HTTPException(status_code=500, detail=f'{e}\n{traceback.format_exc()}')

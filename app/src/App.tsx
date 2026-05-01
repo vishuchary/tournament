@@ -177,7 +177,7 @@ export default function App() {
   }
 
   if (view.type === 'players') {
-    return <PlayersScreen players={players} isAdmin={isAdmin} onBack={() => setView({ type: 'home' })} />;
+    return <PlayersScreen players={players} isAdmin={isAdmin} onBack={() => setView({ type: 'home' })} getToken={getToken} />;
   }
 
   if (view.type === 'playerStats') {

@@ -82,6 +82,18 @@ export async function triggerBaselineRatingsRecompute(token: string): Promise<vo
   }
 }
 
+export async function renamePlayer(oldName: string, newName: string, token: string): Promise<void> {
+  const res = await fetch(`${BACKEND_URL}/ratings/rename-player`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ oldName, newName }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`Rename failed ${res.status}: ${text}`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Tournaments
 // ---------------------------------------------------------------------------
