@@ -1,4 +1,4 @@
-import type { Group, Match, MatchFormat, Team, TeamStats, Tournament, PlayerRatingEntry } from './types';
+import type { Group, Match, MatchFormat, Team, TeamStats, Tournament, PlayerRatingEntry, CompetitiveMatch } from './types';
 export type { }; // keep module
 
 function shortName(fullName: string): string {
@@ -141,8 +141,6 @@ export interface PlayerStats {
 function blankBucket() {
   return { matchesPlayed: 0, matchWins: 0, gameWins: 0, gameLosses: 0, pointsFor: 0, pointsAgainst: 0 };
 }
-
-import type { CompetitiveMatch } from './types';
 
 function accumulateGame(
   game: { team1Score: number; team2Score: number },
@@ -288,6 +286,7 @@ export function computePlayerStats(
 export type CombinedEntry = {
   name: string;
   rating: number;
+  prevRating?: number;
   uncertainty: number;
   won: number;
   lost: number;
@@ -304,6 +303,7 @@ export function buildCombined(ratings: PlayerRatingEntry[], algo: string): Combi
       map.set(r.name, {
         name: r.name,
         rating: r.rating,
+        prevRating: r.prevRating,
         uncertainty: r.uncertainty,
         won: r.won,
         lost: r.lost,
@@ -319,9 +319,15 @@ export function buildCombined(ratings: PlayerRatingEntry[], algo: string): Combi
       const weightedUncertainty = totalGames > 0
         ? (cur.uncertainty * cur.gamesPlayed + r.uncertainty * r.gamesPlayed) / totalGames
         : (cur.uncertainty + r.uncertainty) / 2;
+      const prevR = cur.prevRating !== undefined && r.prevRating !== undefined
+        ? totalGames > 0
+          ? (cur.prevRating * cur.gamesPlayed + r.prevRating * r.gamesPlayed) / totalGames
+          : (cur.prevRating + r.prevRating) / 2
+        : (cur.prevRating ?? r.prevRating);
       map.set(r.name, {
         name: r.name,
         rating: weightedRating,
+        prevRating: prevR,
         uncertainty: weightedUncertainty,
         won: cur.won + r.won,
         lost: cur.lost + r.lost,
@@ -345,8 +351,9 @@ export function winProbability(
   algo: string,
 ): { p1: number; p2: number } | null {
   const algoRatings = ratings.filter(r => r.algo === algo);
-  const byType = algoRatings.filter(r => r.type === matchType);
-  const source = byType.length > 0 ? byType : algoRatings;
+  const pool = algoRatings.length > 0 ? algoRatings : ratings;
+  const byType = pool.filter(r => r.type === matchType);
+  const source = byType.length > 0 ? byType : pool;
   const ratingMap = new Map(source.map(r => [r.name, r.rating]));
   const avg = (players: string[]) => {
     const vals = players.map(p => ratingMap.get(p)).filter((v): v is number => v !== undefined);
@@ -357,6 +364,41 @@ export function winProbability(
   if (r1 === null || r2 === null) return null;
   const p1 = 1 / (1 + Math.pow(10, (r2 - r1) / 400));
   return { p1, p2: 1 - p1 };
+}
+
+export interface PlayerStreak {
+  count: number;
+  type: 'win' | 'loss';
+}
+
+export function computeStreaks(matches: CompetitiveMatch[]): Map<string, PlayerStreak> {
+  const sorted = [...matches].sort((a, b) => {
+    if (a.date !== b.date) return (a.date ?? '').localeCompare(b.date ?? '');
+    return (a.createdAt ?? 0) - (b.createdAt ?? 0);
+  });
+
+  const result = new Map<string, PlayerStreak>();
+
+  const allPlayers = new Set(sorted.flatMap(m => [...m.team1, ...m.team2]));
+  for (const player of allPlayers) {
+    let count = 0;
+    let type: 'win' | 'loss' | null = null;
+    for (const m of sorted) {
+      const onTeam1 = m.team1.includes(player);
+      const onTeam2 = m.team2.includes(player);
+      if (!onTeam1 && !onTeam2) continue;
+      const won = onTeam1 ? m.winner === 1 : m.winner === 2;
+      const cur: 'win' | 'loss' = won ? 'win' : 'loss';
+      if (cur === type) {
+        count++;
+      } else {
+        type = cur;
+        count = 1;
+      }
+    }
+    if (type && count >= 1) result.set(player, { count, type });
+  }
+  return result;
 }
 
 export function generateMatches(teams: Team[]): { team1Id: string; team2Id: string }[] {

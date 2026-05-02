@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
-import type { PlayerRatingEntry } from '../types';
+import type { PlayerRatingEntry, CompetitiveMatch } from '../types';
 import type { RatingAlgo } from '../store';
-import { buildCombined } from '../rankings';
+import { buildCombined, computeStreaks, type PlayerStreak } from '../rankings';
 
 function confidenceLabel(uncertainty: number): { text: string; color: string } {
   if (uncertainty < 80)  return { text: 'Established', color: 'text-green-600 bg-green-50' };
@@ -9,10 +9,40 @@ function confidenceLabel(uncertainty: number): { text: string; color: string } {
   return { text: 'Unrated', color: 'text-gray-400 bg-gray-100' };
 }
 
+function TrendBadge({ r, algo }: { r: { rating: number; prevRating?: number }; algo: RatingAlgo }) {
+  if (r.prevRating === undefined) return null;
+  const delta = r.rating - r.prevRating;
+  if (Math.abs(delta) < 0.01) return null;
+  const up = delta > 0;
+  const label = algo === 'rc' ? delta.toFixed(3) : Math.round(delta).toString();
+  return (
+    <span className={`text-xs font-medium tabular-nums ${up ? 'text-green-600' : 'text-red-500'}`}>
+      {up ? '▲' : '▼'} {up ? '+' : ''}{label}
+    </span>
+  );
+}
+
+function StreakBadge({ streak, won, lost }: { streak: PlayerStreak | undefined; won: number; lost: number }) {
+  if (streak) {
+    const isWin = streak.type === 'win';
+    return (
+      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${isWin ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+        {isWin ? '🔥' : '❄️'} {streak.count} {isWin ? 'W' : 'L'} streak
+      </span>
+    );
+  }
+  const total = won + lost;
+  if (total < 5) return null;
+  const rate = won / total;
+  if (rate >= 0.60) return <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-green-100 text-green-700">🔥</span>;
+  return null;
+}
+
 function RatingsTab({
-  ratings, type, algo, topRankers, onPlayerClick,
+  ratings, type, algo, topRankers, streaks, onPlayerClick,
 }: {
-  ratings: PlayerRatingEntry[]; type: 'singles' | 'doubles'; algo: RatingAlgo; topRankers: number; onPlayerClick?: (name: string) => void;
+  ratings: PlayerRatingEntry[]; type: 'singles' | 'doubles'; algo: RatingAlgo; topRankers: number;
+  streaks: Map<string, PlayerStreak>; onPlayerClick?: (name: string) => void;
 }) {
   const filtered = useMemo(
     () => ratings.filter(r => r.type === type && r.algo === algo).sort((a, b) => {
@@ -63,14 +93,18 @@ function RatingsTab({
                   className={`font-semibold text-gray-900 text-sm truncate ${onPlayerClick ? 'cursor-pointer hover:text-blue-600 hover:underline' : ''}`}
                   onClick={() => onPlayerClick?.(r.name)}
                 >{r.name}</p>
-                <div className="text-right shrink-0">
-                  <span className="font-bold text-lg text-gray-900">{algo === 'rc' ? r.rating.toFixed(3) : Math.round(r.rating)}</span>
-                  <span className="text-xs text-gray-400 ml-1">{uncertLabel} {algo === 'rc' ? r.uncertainty.toFixed(3) : Math.round(r.uncertainty)}</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <TrendBadge r={r} algo={algo} />
+                  <div className="text-right">
+                    <span className="font-bold text-lg text-gray-900">{algo === 'rc' ? r.rating.toFixed(3) : Math.round(r.rating)}</span>
+                    <span className="text-xs text-gray-400 ml-1">{uncertLabel} {algo === 'rc' ? r.uncertainty.toFixed(3) : Math.round(r.uncertainty)}</span>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 mt-0.5">
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                 <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${confidence.color}`}>{confidence.text}</span>
                 <span className="text-xs text-gray-400">{r.won}W · {r.lost}L · {winRate}%</span>
+                <StreakBadge streak={streaks.get(r.name)} won={r.won} lost={r.lost} />
                 {algo === 'glicko2' && r.volatility !== undefined && (
                   <span className="text-xs text-gray-400">σ {r.volatility.toFixed(3)}</span>
                 )}
@@ -93,9 +127,10 @@ function RatingsTab({
 }
 
 function CombinedTab({
-  ratings, algo, topRankers, onPlayerClick,
+  ratings, algo, topRankers, streaks, onPlayerClick,
 }: {
-  ratings: PlayerRatingEntry[]; algo: RatingAlgo; topRankers: number; onPlayerClick?: (name: string) => void;
+  ratings: PlayerRatingEntry[]; algo: RatingAlgo; topRankers: number;
+  streaks: Map<string, PlayerStreak>; onPlayerClick?: (name: string) => void;
 }) {
   const combined = useMemo(() => buildCombined(ratings, algo).slice(0, topRankers), [ratings, algo, topRankers]);
 
@@ -139,14 +174,18 @@ function CombinedTab({
                   className={`font-semibold text-gray-900 text-sm truncate ${onPlayerClick ? 'cursor-pointer hover:text-blue-600 hover:underline' : ''}`}
                   onClick={() => onPlayerClick?.(r.name)}
                 >{r.name}</p>
-                <div className="text-right shrink-0">
-                  <span className="font-bold text-lg text-gray-900">{algo === 'rc' ? r.rating.toFixed(1) : Math.round(r.rating)}</span>
-                  <span className="text-xs text-gray-400 ml-1">{badges}</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <TrendBadge r={r} algo={algo} />
+                  <div className="text-right">
+                    <span className="font-bold text-lg text-gray-900">{algo === 'rc' ? r.rating.toFixed(1) : Math.round(r.rating)}</span>
+                    <span className="text-xs text-gray-400 ml-1">{badges}</span>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 mt-0.5">
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                 <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${confidence.color}`}>{confidence.text}</span>
                 <span className="text-xs text-gray-400">{r.won}W · {r.lost}L · {winRate}%</span>
+                <StreakBadge streak={streaks.get(r.name)} won={r.won} lost={r.lost} />
               </div>
               <div className="mt-1.5 h-1 bg-gray-100 rounded-full overflow-hidden">
                 <div
@@ -167,6 +206,7 @@ function CombinedTab({
 
 interface Props {
   ratings: PlayerRatingEntry[];
+  competitiveMatches: CompetitiveMatch[];
   algo: RatingAlgo;
   topRankers: number;
   isAdmin: boolean;
@@ -177,7 +217,8 @@ interface Props {
   onPlayerClick?: (name: string) => void;
 }
 
-export default function RatingsScreen({ ratings, algo, topRankers, isAdmin, onBack, onAlgoChange, onTopRankersChange, onRecompute, onPlayerClick }: Props) {
+export default function RatingsScreen({ ratings, competitiveMatches, algo, topRankers, isAdmin, onBack, onAlgoChange, onTopRankersChange, onRecompute, onPlayerClick }: Props) {
+  const streaks = useMemo(() => computeStreaks(competitiveMatches), [competitiveMatches]);
   const [tab, setTab] = useState<'singles' | 'doubles' | 'combined'>('combined');
   const [recomputing, setRecomputing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -267,9 +308,12 @@ export default function RatingsScreen({ ratings, algo, topRankers, isAdmin, onBa
         </div>
 
         {tab === 'combined'
-          ? <CombinedTab ratings={ratings} algo={algo} topRankers={topRankers} onPlayerClick={onPlayerClick} />
-          : <RatingsTab ratings={ratings} type={tab} algo={algo} topRankers={topRankers} onPlayerClick={onPlayerClick} />
+          ? <CombinedTab ratings={ratings} algo={algo} topRankers={topRankers} streaks={streaks} onPlayerClick={onPlayerClick} />
+          : <RatingsTab ratings={ratings} type={tab} algo={algo} topRankers={topRankers} streaks={streaks} onPlayerClick={onPlayerClick} />
         }
+        {isAdmin && ratings.length > 0 && !ratings.some(r => r.prevRating !== undefined) && (
+          <p className="text-xs text-center text-gray-400 mt-3">Hit Recompute to enable ▲▼ rating trends</p>
+        )}
       </div>
     </div>
   );

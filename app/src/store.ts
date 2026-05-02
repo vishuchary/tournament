@@ -190,9 +190,17 @@ export function deletePlayer(id: string): Promise<void> {
 
 export function subscribeCompetitiveMatches(callback: (matches: CompetitiveMatch[]) => void): () => void {
   const q = query(collection(db, 'competitive_matches'), orderBy('createdAt', 'desc'));
-  return onSnapshot(q, snapshot => {
-    callback(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as CompetitiveMatch)));
-  });
+  const unsub = onSnapshot(q,
+    snapshot => callback(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as CompetitiveMatch))),
+    () => {
+      // orderBy query failed (likely missing index or field) — fall back to unordered
+      const unsub2 = onSnapshot(collection(db, 'competitive_matches'),
+        snapshot => callback(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as CompetitiveMatch))),
+      );
+      return unsub2;
+    },
+  );
+  return unsub;
 }
 
 export function saveCompetitiveMatch(m: CompetitiveMatch): Promise<void> {

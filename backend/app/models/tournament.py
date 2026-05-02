@@ -86,3 +86,4 @@ class PlayerRatingEntry(BaseModel):
     gamesPlayed: int = 0
     algo: str = 'rc'
     type: str = 'singles'
+    prevRating: Optional[float] = None

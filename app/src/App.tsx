@@ -265,6 +265,7 @@ export default function App() {
     return (
       <RatingsScreen
         ratings={baselineRatings}
+        competitiveMatches={competitiveMatches}
         algo={algo}
         topRankers={topRankers}
         isAdmin={isAdmin}

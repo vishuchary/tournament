@@ -193,8 +193,9 @@ export default function GroupView({ group, allGroups, format, setCount, players 
                 onClick={() => setEditMatch(match)}
               >
                 {(() => {
-                  const pred = matchType && ratings.length > 0
-                    ? winProbability(t1?.players ?? [], t2?.players ?? [], ratings, matchType, algo)
+                  const inferredType = matchType ?? ((t1?.players.length ?? 0) > 1 ? 'doubles' : 'singles');
+                  const pred = ratings.length > 0
+                    ? winProbability(t1?.players ?? [], t2?.players ?? [], ratings, inferredType, algo)
                     : null;
                   const predBar = pred ? (
                     <div className="flex flex-col items-center min-w-[100px] gap-1">

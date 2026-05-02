@@ -171,6 +171,14 @@ def recompute_ratings():
         competitive_games = _competitive_matches_as_games(db)
         games = tournament_games + competitive_games
 
+        # Snapshot current ratings so we can carry prevRating forward
+        prev_ratings: dict[str, float] = {}
+        for doc in db.collection('ratings').stream():
+            d = doc.to_dict() or {}
+            if 'name' in d and 'rating' in d and 'type' in d and 'algo' in d:
+                key = _sanitize(d['name']) + f'_{d["type"]}_{d["algo"]}'
+                prev_ratings[key] = d['rating']
+
         # Delete stale entries and any legacy baseline_ratings collection
         batch = db.batch()
         for doc in db.collection('ratings').stream():
@@ -190,6 +198,8 @@ def recompute_ratings():
                     data = r.model_dump()
                     data['algo'] = algo
                     data['type'] = gtype
+                    if key in prev_ratings:
+                        data['prevRating'] = prev_ratings[key]
                     batch.set(ref, data)
         batch.commit()
 

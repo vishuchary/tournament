@@ -92,6 +92,7 @@ export interface PlayerRatingEntry {
   gamesPlayed: number;
   algo: 'rc' | 'glicko2';
   type: 'singles' | 'doubles';
+  prevRating?: number;
 }
 
 export interface TeamStats {
