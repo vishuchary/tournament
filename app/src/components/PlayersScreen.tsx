@@ -1,11 +1,15 @@
-import { useState } from 'react';
-import type { Player } from '../types';
+import { useState, useMemo } from 'react';
+import type { Player, PlayerRatingEntry } from '../types';
 import { savePlayer, deletePlayer, renamePlayer } from '../store';
+import type { RatingAlgo } from '../store';
+import ShareCard from './ShareCard';
 
 interface Props {
   players: Player[];
   isAdmin: boolean;
   topPlayerNames?: Set<string>;
+  ratings?: PlayerRatingEntry[];
+  algo?: RatingAlgo;
   onBack: () => void;
   getToken: () => Promise<string>;
   onPlayerClick?: (name: string) => void;
@@ -167,7 +171,7 @@ if (p.sex) parts.push(p.sex.charAt(0).toUpperCase() + p.sex.slice(1));
   return parts.join(' · ');
 }
 
-export default function PlayersScreen({ players, isAdmin, topPlayerNames, onBack, getToken, onPlayerClick }: Props) {
+export default function PlayersScreen({ players, isAdmin, topPlayerNames, ratings = [], algo = 'rc', onBack, getToken, onPlayerClick }: Props) {
   const [formState, setFormState] = useState<
     | { mode: 'add' }
     | { mode: 'edit'; player: Player }
@@ -175,6 +179,16 @@ export default function PlayersScreen({ players, isAdmin, topPlayerNames, onBack
   >(null);
   const [renaming, setRenaming] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
+  const [shareTarget, setShareTarget] = useState<{ name: string; rank: number; rating: number; won: number; lost: number } | null>(null);
+
+  const combinedRankMap = useMemo(() => {
+    const sorted = ratings
+      .filter(r => r.type === 'combined' && r.algo === algo)
+      .sort((a, b) => (b.won !== a.won ? b.won - a.won : b.rating - a.rating));
+    const map = new Map<string, { rank: number; rating: number; won: number; lost: number }>();
+    sorted.forEach((r, i) => map.set(r.name, { rank: i + 1, rating: r.rating, won: r.won, lost: r.lost }));
+    return map;
+  }, [ratings, algo]);
 
   async function handleSave(draft: PlayerDraft) {
     if (!draft.name.trim()) return;
@@ -219,6 +233,17 @@ export default function PlayersScreen({ players, isAdmin, topPlayerNames, onBack
         />
       )}
 
+      {shareTarget && (
+        <ShareCard
+          playerName={shareTarget.name}
+          rank={shareTarget.rank}
+          rating={shareTarget.rating}
+          won={shareTarget.won}
+          lost={shareTarget.lost}
+          algo={algo}
+          onClose={() => setShareTarget(null)}
+        />
+      )}
       <div className="max-w-xl mx-auto p-4">
         {renaming && (
           <div className="mb-4 bg-blue-50 border border-blue-200 text-blue-700 text-sm px-4 py-2.5 rounded-xl">
@@ -269,6 +294,18 @@ export default function PlayersScreen({ players, isAdmin, topPlayerNames, onBack
                     <p className="text-xs text-gray-400 mt-0.5 truncate">{playerSummary(p)}</p>
                   )}
                 </div>
+                {combinedRankMap.has(p.name) && (
+                  <button
+                    onClick={() => setShareTarget(combinedRankMap.get(p.name)! && { name: p.name, ...combinedRankMap.get(p.name)! })}
+                    className="text-gray-300 hover:text-blue-500 transition-colors p-1 shrink-0"
+                    title="Share ranking"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                    </svg>
+                  </button>
+                )}
                 {isAdmin && (
                   <>
                     <button

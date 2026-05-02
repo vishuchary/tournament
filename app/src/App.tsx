@@ -210,6 +210,8 @@ export default function App() {
         players={players}
         isAdmin={isAdmin}
         topPlayerNames={topPlayerNames}
+        ratings={baselineRatings}
+        algo={algo}
         onBack={() => setView({ type: 'home' })}
         getToken={getToken}
         onPlayerClick={name => {
