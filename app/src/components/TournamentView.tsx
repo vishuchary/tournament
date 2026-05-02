@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import type { Tournament, TournamentLevel, Group, Match, Team, MatchFormat, Player } from '../types';
+import type { Tournament, TournamentLevel, Group, Match, Team, MatchFormat, Player, PlayerRatingEntry } from '../types';
 import { computeCrossGroupRankings, generateMatches, teamDisplayName } from '../rankings';
 import GroupView from './GroupView';
+import type { RatingAlgo } from '../store';
 
 function uid() {
   return Math.random().toString(36).slice(2, 10);
@@ -11,6 +12,8 @@ interface Props {
   tournament: Tournament;
   players: Player[];
   isAdmin: boolean;
+  ratings?: PlayerRatingEntry[];
+  algo?: RatingAlgo;
   onUpdate: (t: Tournament) => void;
   onDelete: () => void;
   onBack: () => void;
@@ -268,7 +271,7 @@ function AdvanceSetup({
   );
 }
 
-export default function TournamentView({ tournament, players, isAdmin, onUpdate, onDelete, onBack, onRequestAdmin, onPlayerClick }: Props) {
+export default function TournamentView({ tournament, players, isAdmin, ratings = [], algo = 'rc', onUpdate, onDelete, onBack, onRequestAdmin, onPlayerClick }: Props) {
   const [viewLevel, setViewLevel] = useState(tournament.levels.length - 1);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(
     tournament.levels[tournament.levels.length - 1]?.groups[0]?.id ?? null
@@ -577,6 +580,9 @@ export default function TournamentView({ tournament, players, isAdmin, onUpdate,
             setCount={level?.setCount ?? tournament.setCount ?? (tournament.format === 'sets' ? 3 : 2)}
             players={players}
             isLocked={isLocked}
+            matchType={tournament.matchType}
+            ratings={ratings}
+            algo={algo}
             onUpdate={g => handleGroupUpdate(viewLevel, g)}
             onPlayerClick={onPlayerClick}
           />

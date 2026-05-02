@@ -286,6 +286,8 @@ export default function App() {
         tournament={t}
         players={players}
         isAdmin={isAdmin}
+        ratings={baselineRatings}
+        algo={algo}
         onUpdate={handleUpdate}
         onDelete={() => handleDelete(t.id)}
         onBack={() => setView({ type: 'home' })}

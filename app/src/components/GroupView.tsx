@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import type { Group, Match, MatchFormat, Team, Player } from '../types';
-import { computeStandings, teamDisplayName } from '../rankings';
+import type { Group, Match, MatchFormat, Team, Player, PlayerRatingEntry } from '../types';
+import { computeStandings, teamDisplayName, winProbability } from '../rankings';
 import MatchEntry from './MatchEntry';
 import PlayerPicker from './PlayerPicker';
+import type { RatingAlgo } from '../store';
 
 interface Props {
   group: Group;
@@ -11,6 +12,9 @@ interface Props {
   setCount: number;
   players?: Player[];
   isLocked?: boolean;
+  matchType?: 'singles' | 'doubles';
+  ratings?: PlayerRatingEntry[];
+  algo?: RatingAlgo;
   onUpdate: (g: Group) => void;
   onPlayerClick?: (name: string) => void;
 }
@@ -63,7 +67,7 @@ function InlineInput({
   );
 }
 
-export default function GroupView({ group, allGroups, format, setCount, players = [], isLocked = false, onUpdate, onPlayerClick }: Props) {
+export default function GroupView({ group, allGroups, format, setCount, players = [], isLocked = false, matchType, ratings = [], algo = 'rc', onUpdate, onPlayerClick }: Props) {
   const [tab, setTab] = useState<Tab>('matches');
   const [editMatch, setEditMatch] = useState<Match | null>(null);
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null);
@@ -199,9 +203,24 @@ export default function GroupView({ group, allGroups, format, setCount, players 
                           ))}
                         </div>
                       </div>
-                    ) : (
-                      <span className="text-gray-300 text-xl font-light min-w-[100px] text-center">vs</span>
-                    )}
+                    ) : (() => {
+                      const pred = matchType && ratings.length > 0
+                        ? winProbability(t1?.players ?? [], t2?.players ?? [], ratings, matchType, algo)
+                        : null;
+                      return pred ? (
+                        <div className="flex flex-col items-center min-w-[100px] gap-1">
+                          <div className="flex w-full h-1.5 rounded-full overflow-hidden">
+                            <div className="bg-blue-400 h-full" style={{ width: `${pred.p1 * 100}%` }} />
+                            <div className="bg-orange-300 h-full flex-1" />
+                          </div>
+                          <span className="text-xs text-gray-400 tabular-nums">
+                            {Math.round(pred.p1 * 100)}% · {Math.round(pred.p2 * 100)}%
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-gray-300 text-xl font-light min-w-[100px] text-center">vs</span>
+                      );
+                    })()}
                     <span className="font-medium text-gray-900 flex-1">{t2 ? teamDisplayName(t2) : ''}</span>
                   </div>
                   <div className="ml-4">

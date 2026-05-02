@@ -297,6 +297,27 @@ export function buildCombined(ratings: PlayerRatingEntry[], algo: string): Combi
   });
 }
 
+export function winProbability(
+  team1Players: string[],
+  team2Players: string[],
+  ratings: PlayerRatingEntry[],
+  matchType: 'singles' | 'doubles',
+  algo: string,
+): { p1: number; p2: number } | null {
+  const ratingMap = new Map(
+    ratings.filter(r => r.type === matchType && r.algo === algo).map(r => [r.name, r.rating])
+  );
+  const avg = (players: string[]) => {
+    const vals = players.map(p => ratingMap.get(p)).filter((v): v is number => v !== undefined);
+    return vals.length === players.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  };
+  const r1 = avg(team1Players);
+  const r2 = avg(team2Players);
+  if (r1 === null || r2 === null) return null;
+  const p1 = 1 / (1 + Math.pow(10, (r2 - r1) / 400));
+  return { p1, p2: 1 - p1 };
+}
+
 export function generateMatches(teams: Team[]): { team1Id: string; team2Id: string }[] {
   const pairs: { team1Id: string; team2Id: string }[] = [];
   for (let i = 0; i < teams.length; i++) {
