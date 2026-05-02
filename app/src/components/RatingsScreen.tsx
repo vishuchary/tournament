@@ -4,6 +4,7 @@ import { auth } from '../firebase';
 import type { PlayerRatingEntry, CompetitiveMatch } from '../types';
 import type { RatingAlgo } from '../store';
 import { computeStreaks, type PlayerStreak } from '../rankings';
+import ShareCard from './ShareCard';
 
 function confidenceLabel(uncertainty: number): { text: string; color: string } {
   if (uncertainty < 80)  return { text: 'Established', color: 'text-green-600 bg-green-50' };
@@ -134,6 +135,8 @@ function CombinedTab({
   ratings: PlayerRatingEntry[]; algo: RatingAlgo; topRankers: number;
   streaks: Map<string, PlayerStreak>; onPlayerClick?: (name: string) => void;
 }) {
+  const [shareTarget, setShareTarget] = useState<{ name: string; rank: number; rating: number; won: number; lost: number } | null>(null);
+
   const combined = useMemo(
     () => ratings
       .filter(r => r.type === 'combined' && r.algo === algo)
@@ -156,59 +159,82 @@ function CombinedTab({
   }
 
   return (
-    <div className="space-y-2">
-      {combined.map((r, i) => {
-        const rank = i + 1;
-        const isPodium = rank <= 3;
-        const confidence = confidenceLabel(r.uncertainty);
-        const winRate = (r.won + r.lost) > 0 ? Math.round((r.won / (r.won + r.lost)) * 100) : 0;
-        const pct = Math.max(10, ((r.rating - minBase) / (maxRating - minBase || 1)) * 100);
-        const badges = [r.hasSingles && 'S', r.hasDoubles && 'D'].filter(Boolean).join('+');
-        return (
-          <div
-            key={r.name}
-            className={`rounded-xl border px-4 py-3 flex items-center gap-3 ${
-              isPodium
-                ? rank === 1 ? 'border-yellow-300 bg-yellow-50'
-                  : rank === 2 ? 'border-gray-300 bg-gray-50'
-                  : 'border-orange-200 bg-orange-50'
-                : 'border-gray-200 bg-white'
-            }`}
-          >
-            <span className="text-sm font-bold text-gray-400 w-6 shrink-0 text-center">{MEDAL[rank] ?? rank}</span>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <p
-                  className={`font-semibold text-gray-900 text-sm truncate ${onPlayerClick ? 'cursor-pointer hover:text-blue-600 hover:underline' : ''}`}
-                  onClick={() => onPlayerClick?.(r.name)}
-                >{r.name}</p>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <TrendBadge r={r} algo={algo} />
-                  <div className="text-right">
-                    <span className="font-bold text-lg text-gray-900">{algo === 'rc' ? r.rating.toFixed(1) : Math.round(r.rating)}</span>
-                    <span className="text-xs text-gray-400 ml-1">{badges}</span>
+    <>
+      {shareTarget && (
+        <ShareCard
+          playerName={shareTarget.name}
+          rank={shareTarget.rank}
+          rating={shareTarget.rating}
+          won={shareTarget.won}
+          lost={shareTarget.lost}
+          algo={algo}
+          onClose={() => setShareTarget(null)}
+        />
+      )}
+      <div className="space-y-2">
+        {combined.map((r, i) => {
+          const rank = i + 1;
+          const isPodium = rank <= 3;
+          const confidence = confidenceLabel(r.uncertainty);
+          const winRate = (r.won + r.lost) > 0 ? Math.round((r.won / (r.won + r.lost)) * 100) : 0;
+          const pct = Math.max(10, ((r.rating - minBase) / (maxRating - minBase || 1)) * 100);
+          const badges = [r.hasSingles && 'S', r.hasDoubles && 'D'].filter(Boolean).join('+');
+          return (
+            <div
+              key={r.name}
+              className={`rounded-xl border px-4 py-3 flex items-center gap-3 ${
+                isPodium
+                  ? rank === 1 ? 'border-yellow-300 bg-yellow-50'
+                    : rank === 2 ? 'border-gray-300 bg-gray-50'
+                    : 'border-orange-200 bg-orange-50'
+                  : 'border-gray-200 bg-white'
+              }`}
+            >
+              <span className="text-sm font-bold text-gray-400 w-6 shrink-0 text-center">{MEDAL[rank] ?? rank}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <p
+                    className={`font-semibold text-gray-900 text-sm truncate ${onPlayerClick ? 'cursor-pointer hover:text-blue-600 hover:underline' : ''}`}
+                    onClick={() => onPlayerClick?.(r.name)}
+                  >{r.name}</p>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <TrendBadge r={r} algo={algo} />
+                    <button
+                      onClick={() => setShareTarget({ name: r.name, rank, rating: r.rating, won: r.won, lost: r.lost })}
+                      className="text-gray-300 hover:text-blue-500 transition-colors p-1"
+                      title="Share ranking"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                      </svg>
+                    </button>
+                    <div className="text-right">
+                      <span className="font-bold text-lg text-gray-900">{algo === 'rc' ? r.rating.toFixed(1) : Math.round(r.rating)}</span>
+                      <span className="text-xs text-gray-400 ml-1">{badges}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${confidence.color}`}>{confidence.text}</span>
-                <span className="text-xs text-gray-400">{r.won}W · {r.lost}L · {winRate}%</span>
-                <StreakBadge streak={streaks.get(r.name)} won={r.won} lost={r.lost} />
-              </div>
-              <div className="mt-1.5 h-1 bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${r.uncertainty > 150 ? 'bg-gray-300' : 'bg-purple-500'}`}
-                  style={{ width: `${pct}%` }}
-                />
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${confidence.color}`}>{confidence.text}</span>
+                  <span className="text-xs text-gray-400">{r.won}W · {r.lost}L · {winRate}%</span>
+                  <StreakBadge streak={streaks.get(r.name)} won={r.won} lost={r.lost} />
+                </div>
+                <div className="mt-1.5 h-1 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${r.uncertainty > 150 ? 'bg-gray-300' : 'bg-purple-500'}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
               </div>
             </div>
-          </div>
-        );
-      })}
-      <p className="text-xs text-center text-gray-400 pt-2 pb-2">
-        Combined · weighted average of singles + doubles · S = singles only · D = doubles only · S+D = both · 🔥 = 60%+ win rate
-      </p>
-    </div>
+          );
+        })}
+        <p className="text-xs text-center text-gray-400 pt-2 pb-2">
+          Combined · weighted average of singles + doubles · S = singles only · D = doubles only · S+D = both · 🔥 = 60%+ win rate
+        </p>
+      </div>
+    </>
   );
 }
 
