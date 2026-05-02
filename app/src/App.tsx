@@ -253,6 +253,8 @@ export default function App() {
         matches={competitiveMatches}
         players={players}
         isAdmin={isAdmin}
+        ratings={baselineRatings}
+        algo={algo}
         onBack={() => setView({ type: 'home' })}
         onDataChange={handleRecompute}
       />

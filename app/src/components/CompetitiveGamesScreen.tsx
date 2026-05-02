@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef } from 'react';
-import type { CompetitiveMatch, Player, Game } from '../types';
-import { saveCompetitiveMatch, deleteCompetitiveMatch } from '../store';
+import type { CompetitiveMatch, Player, Game, PlayerRatingEntry } from '../types';
+import { saveCompetitiveMatch, deleteCompetitiveMatch, type RatingAlgo } from '../store';
+import { winProbability } from '../rankings';
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -213,9 +214,11 @@ const DEFAULT_FORM: FormState = {
 };
 
 function AddMatchForm({
-  players, onSave, onCancel,
+  players, ratings, algo, onSave, onCancel,
 }: {
   players: Player[];
+  ratings: PlayerRatingEntry[];
+  algo: RatingAlgo;
   onSave: (m: CompetitiveMatch) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -225,6 +228,12 @@ function AddMatchForm({
 
   const numPlayers = form.type === 'singles' ? 1 : 2;
   const allSelected = [...form.team1.slice(0, numPlayers), ...form.team2.slice(0, numPlayers)].filter(Boolean);
+
+  const t1Players = form.team1.slice(0, numPlayers).filter(Boolean);
+  const t2Players = form.team2.slice(0, numPlayers).filter(Boolean);
+  const pred = t1Players.length === numPlayers && t2Players.length === numPlayers
+    ? winProbability(t1Players, t2Players, ratings, form.type, algo)
+    : null;
 
   function setType(type: 'singles' | 'doubles') {
     setForm(f => ({ ...f, type, team1: ['', ''], team2: ['', ''] }));
@@ -316,6 +325,21 @@ function AddMatchForm({
         </div>
       </div>
 
+      {/* Prediction */}
+      {pred && (
+        <div className="flex flex-col gap-1 px-1">
+          <div className="flex w-full h-2 rounded-full overflow-hidden">
+            <div className="bg-blue-400 h-full transition-all" style={{ width: `${pred.p1 * 100}%` }} />
+            <div className="bg-orange-300 h-full flex-1" />
+          </div>
+          <div className="flex justify-between text-xs text-gray-400">
+            <span className="text-blue-500 font-medium">{Math.round(pred.p1 * 100)}% likely</span>
+            <span className="text-gray-400">predicted win</span>
+            <span className="text-orange-400 font-medium">{Math.round(pred.p2 * 100)}% likely</span>
+          </div>
+        </div>
+      )}
+
       {/* Date + sets */}
       <div className="flex gap-2">
         <input type="date" value={form.date}
@@ -366,11 +390,13 @@ interface Props {
   matches: CompetitiveMatch[];
   players: Player[];
   isAdmin: boolean;
+  ratings: PlayerRatingEntry[];
+  algo: RatingAlgo;
   onBack: () => void;
   onDataChange: () => void;
 }
 
-export default function CompetitiveGamesScreen({ matches, players, isAdmin, onBack, onDataChange }: Props) {
+export default function CompetitiveGamesScreen({ matches, players, isAdmin, ratings, algo, onBack, onDataChange }: Props) {
   const [filterPlayer, setFilterPlayer] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
 
@@ -461,6 +487,8 @@ export default function CompetitiveGamesScreen({ matches, players, isAdmin, onBa
         {showAdd && (
           <AddMatchForm
             players={players}
+            ratings={ratings}
+            algo={algo}
             onSave={handleSave}
             onCancel={() => setShowAdd(false)}
           />
