@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useRegisterSW } from 'virtual:pwa-register/react';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { auth } from './firebase';
 import type { Tournament, TournamentSummary, Player, PlayerRatingEntry, CompetitiveMatch } from './types';
@@ -76,6 +77,8 @@ function TournamentCard({ t, onClick }: { t: TournamentSummary; onClick: () => v
 }
 
 export default function App() {
+  const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW();
+
   // Lightweight summaries — home screen only
   const [summaries, setSummaries] = useState<TournamentSummary[]>([]);
   const [summariesLoaded, setSummariesLoaded] = useState(false);
@@ -307,6 +310,18 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {needRefresh && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-blue-600 text-white text-sm px-4 py-3 flex items-center justify-between shadow-lg">
+          <span>New version available</span>
+          <button
+            onClick={() => updateServiceWorker(true)}
+            className="bg-white text-blue-600 font-semibold px-3 py-1 rounded-lg text-xs hover:bg-blue-50"
+          >
+            Update now
+          </button>
+        </div>
+      )}
+
       {showAdminLogin && (
         <AdminLogin
           onSuccess={() => setShowAdminLogin(false)}
