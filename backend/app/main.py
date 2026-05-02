@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .routers import tournaments, ratings, competitive_matches
+from .routers import tournaments, ratings, competitive_matches, players
 from .services.firestore_client import get_firestore
 import os
 import time
@@ -22,7 +22,7 @@ app.add_middleware(
 app.include_router(tournaments.router)
 app.include_router(ratings.router)
 app.include_router(competitive_matches.router)
-
+app.include_router(players.router)
 
 
 @app.get('/health')

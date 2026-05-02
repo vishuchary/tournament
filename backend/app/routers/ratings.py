@@ -186,12 +186,14 @@ def recompute_ratings():
         for doc in db.collection('baseline_ratings').stream():
             batch.delete(doc.reference)
 
+        all_computed: dict[str, list[PlayerRatingEntry]] = {}
         for gtype in ('singles', 'doubles'):
             for algo in ('rc', 'glicko2'):
                 computed: list[PlayerRatingEntry] = (
                     compute_rc_ratings(games, gtype) if algo == 'rc'
                     else compute_glicko2_ratings(games, gtype)
                 )
+                all_computed[f'{gtype}_{algo}'] = computed
                 for r in computed:
                     key = _sanitize(r.name) + f'_{gtype}_{algo}'
                     ref = db.collection('ratings').document(key)
@@ -201,6 +203,55 @@ def recompute_ratings():
                     if key in prev_ratings:
                         data['prevRating'] = prev_ratings[key]
                     batch.set(ref, data)
+
+        # Compute and save combined ratings per player per algo
+        for algo in ('rc', 'glicko2'):
+            singles = {r.name: r for r in all_computed.get(f'singles_{algo}', [])}
+            doubles = {r.name: r for r in all_computed.get(f'doubles_{algo}', [])}
+            all_names = set(singles) | set(doubles)
+            for name in all_names:
+                s = singles.get(name)
+                d = doubles.get(name)
+                if s and d:
+                    g1, g2 = s.gamesPlayed, d.gamesPlayed
+                    total = g1 + g2
+                    if total > 0:
+                        rating = (s.rating * g1 + d.rating * g2) / total
+                        uncertainty = (s.uncertainty * g1 + d.uncertainty * g2) / total
+                        prev_key_s = _sanitize(name) + f'_singles_{algo}'
+                        prev_key_d = _sanitize(name) + f'_doubles_{algo}'
+                        ps = prev_ratings.get(prev_key_s)
+                        pd = prev_ratings.get(prev_key_d)
+                        if ps is not None and pd is not None:
+                            prev_r: float | None = (ps * g1 + pd * g2) / total
+                        elif ps is not None:
+                            prev_r = ps
+                        elif pd is not None:
+                            prev_r = pd
+                        else:
+                            prev_r = None
+                    else:
+                        rating = (s.rating + d.rating) / 2
+                        uncertainty = (s.uncertainty + d.uncertainty) / 2
+                        prev_r = None
+                    combined = {'name': name, 'rating': rating, 'uncertainty': uncertainty,
+                                'won': s.won + d.won, 'lost': s.lost + d.lost,
+                                'gamesPlayed': (s.gamesPlayed + d.gamesPlayed),
+                                'algo': algo, 'type': 'combined',
+                                'hasSingles': True, 'hasDoubles': True,
+                                'prevRating': prev_r}
+                else:
+                    r = s or d
+                    assert r is not None
+                    prev_key = _sanitize(name) + f'_{"singles" if s else "doubles"}_{algo}'
+                    combined = {'name': name, 'rating': r.rating, 'uncertainty': r.uncertainty,
+                                'won': r.won, 'lost': r.lost, 'gamesPlayed': r.gamesPlayed,
+                                'algo': algo, 'type': 'combined',
+                                'hasSingles': s is not None, 'hasDoubles': d is not None,
+                                'prevRating': prev_ratings.get(prev_key)}
+                key = _sanitize(name) + f'_combined_{algo}'
+                batch.set(db.collection('ratings').document(key), combined)
+
         batch.commit()
 
         return {'status': 'ok', 'tournament_games': len(tournament_games), 'competitive_games': len(competitive_games)}

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import type { PlayerRatingEntry, CompetitiveMatch } from '../types';
 import type { RatingAlgo } from '../store';
-import { buildCombined, computeStreaks, type PlayerStreak } from '../rankings';
+import { computeStreaks, type PlayerStreak } from '../rankings';
 
 function confidenceLabel(uncertainty: number): { text: string; color: string } {
   if (uncertainty < 80)  return { text: 'Established', color: 'text-green-600 bg-green-50' };
@@ -120,7 +120,7 @@ function RatingsTab({
         );
       })}
       <p className="text-xs text-center text-gray-400 pt-2 pb-2">
-        {algo === 'rc' ? 'Ratings Central · ±SD = uncertainty' : 'Glicko-2 · ±RD = uncertainty · σ = volatility'} · Based on tournament matches
+        {algo === 'rc' ? 'Ratings Central · ±SD = uncertainty' : 'Glicko-2 · ±RD = uncertainty · σ = volatility'} · Based on tournament matches · 🔥 = 60%+ win rate
       </p>
     </div>
   );
@@ -132,7 +132,13 @@ function CombinedTab({
   ratings: PlayerRatingEntry[]; algo: RatingAlgo; topRankers: number;
   streaks: Map<string, PlayerStreak>; onPlayerClick?: (name: string) => void;
 }) {
-  const combined = useMemo(() => buildCombined(ratings, algo).slice(0, topRankers), [ratings, algo, topRankers]);
+  const combined = useMemo(
+    () => ratings
+      .filter(r => r.type === 'combined' && r.algo === algo)
+      .sort((a, b) => (b.won !== a.won ? b.won - a.won : b.rating - a.rating))
+      .slice(0, topRankers),
+    [ratings, algo, topRankers],
+  );
 
   const MEDAL: Record<number, string> = { 1: '👑', 2: '🥈', 3: '🥉' };
   const maxRating = combined[0]?.rating ?? 1500;
@@ -198,7 +204,7 @@ function CombinedTab({
         );
       })}
       <p className="text-xs text-center text-gray-400 pt-2 pb-2">
-        Combined · weighted average of singles + doubles · S = singles only · D = doubles only · S+D = both
+        Combined · weighted average of singles + doubles · S = singles only · D = doubles only · S+D = both · 🔥 = 60%+ win rate
       </p>
     </div>
   );

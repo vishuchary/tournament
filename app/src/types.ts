@@ -107,8 +107,10 @@ export interface PlayerRatingEntry {
   lost: number;
   gamesPlayed: number;
   algo: 'rc' | 'glicko2';
-  type: 'singles' | 'doubles';
+  type: 'singles' | 'doubles' | 'combined';
   prevRating?: number;
+  hasSingles?: boolean;
+  hasDoubles?: boolean;
 }
 
 export interface TeamStats {

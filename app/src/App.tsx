@@ -12,7 +12,6 @@ import {
   subscribeCompetitiveMatches,
   type RatingAlgo,
 } from './store';
-import { buildCombined } from './rankings';
 import TournamentSetup from './components/TournamentSetup';
 import TournamentView from './components/TournamentView';
 import PlayersScreen from './components/PlayersScreen';
@@ -83,10 +82,6 @@ export default function App() {
   // Single full tournament — subscribed only while viewing a tournament
   const [currentTournament, setCurrentTournament] = useState<Tournament | null>(null);
 
-  // Full tournament list — lazy-fetched when player stats is opened
-  const [allTournaments, setAllTournaments] = useState<Tournament[]>([]);
-  const allTournamentsFetchedRef = useRef(false);
-
   const [players, setPlayers] = useState<Player[]>([]);
   const [competitiveMatches, setCompetitiveMatches] = useState<CompetitiveMatch[]>([]);
   const [baselineRatings, setBaselineRatings] = useState<PlayerRatingEntry[]>([]);
@@ -100,7 +95,13 @@ export default function App() {
   const isAdmin = !!user;
 
   const topPlayerNames = useMemo(
-    () => new Set(buildCombined(baselineRatings, algo).slice(0, topRankers).map(r => r.name)),
+    () => new Set(
+      baselineRatings
+        .filter(r => r.type === 'combined' && r.algo === algo)
+        .sort((a, b) => (b.won !== a.won ? b.won - a.won : b.rating - a.rating))
+        .slice(0, topRankers)
+        .map(r => r.name)
+    ),
     [baselineRatings, algo, topRankers],
   );
 
@@ -163,14 +164,6 @@ export default function App() {
     return (await user?.getIdToken()) ?? '';
   }
 
-  async function ensureAllTournaments(): Promise<Tournament[]> {
-    if (allTournamentsFetchedRef.current) return allTournaments;
-    allTournamentsFetchedRef.current = true;
-    const list = await fetchTournaments();
-    setAllTournaments(list);
-    return list;
-  }
-
   async function handleCreate(t: Tournament) {
     setCurrentTournament(t); // optimistic — subscription will confirm
     await saveTournament(t);
@@ -180,17 +173,10 @@ export default function App() {
   async function handleUpdate(t: Tournament) {
     setCurrentTournament(t); // optimistic
     await saveTournament(t);
-    // Keep allTournaments in sync if loaded
-    if (allTournamentsFetchedRef.current) {
-      setAllTournaments(prev => prev.map(x => x.id === t.id ? t : x));
-    }
   }
 
   async function handleDelete(id: string) {
     await deleteTournament(id);
-    if (allTournamentsFetchedRef.current) {
-      setAllTournaments(prev => prev.filter(x => x.id !== id));
-    }
     setView({ type: 'home' });
   }
 
@@ -227,7 +213,6 @@ export default function App() {
         onBack={() => setView({ type: 'home' })}
         getToken={getToken}
         onPlayerClick={name => {
-          ensureAllTournaments();
           setView({ type: 'playerStats', name, back: { type: 'players' } });
         }}
       />
@@ -238,8 +223,6 @@ export default function App() {
     return (
       <PlayerStatsScreen
         playerName={view.name}
-        tournaments={allTournaments}
-        competitiveMatches={competitiveMatches}
         ratings={baselineRatings}
         algo={algo}
         onBack={() => setView(view.back)}
@@ -274,7 +257,6 @@ export default function App() {
         onTopRankersChange={handleTopRankersChange}
         onRecompute={handleRecompute}
         onPlayerClick={name => {
-          ensureAllTournaments();
           setView({ type: 'playerStats', name, back: { type: 'ratings' } });
         }}
       />
@@ -296,7 +278,6 @@ export default function App() {
         onBack={() => setView({ type: 'home' })}
         onRequestAdmin={() => setShowAdminLogin(true)}
         onPlayerClick={name => {
-          ensureAllTournaments();
           setView({ type: 'playerStats', name, back: { type: 'tournament', id: t.id } });
         }}
       />

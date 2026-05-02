@@ -117,6 +117,33 @@ export async function triggerBaselineRatingsRecompute(token: string): Promise<vo
   }
 }
 
+export interface PlayerStatsBucket {
+  matchesPlayed: number;
+  matchWins: number;
+  gameWins: number;
+  gameLosses: number;
+  pointsFor: number;
+  pointsAgainst: number;
+}
+
+export interface PlayerStats {
+  name: string;
+  overall: PlayerStatsBucket;
+  singles: PlayerStatsBucket;
+  doubles: PlayerStatsBucket;
+  tournaments: { id: string; name: string; date?: string; matchType?: string; result: 'winner' | 'runner-up' | null }[];
+  tournamentPerf: { id: string; name: string; date?: string; gameWins: number; gameLosses: number }[];
+}
+
+export async function fetchPlayerStats(name: string): Promise<PlayerStats> {
+  const res = await fetch(`${BACKEND_URL}/players/${encodeURIComponent(name)}/stats`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`Backend error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
 export async function renamePlayer(oldName: string, newName: string, token: string): Promise<void> {
   const res = await fetch(`${BACKEND_URL}/ratings/rename-player`, {
     method: 'POST',

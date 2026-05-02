@@ -100,7 +100,16 @@ export function computeStandings(group: Group, format: MatchFormat): TeamStats[]
 }
 
 export function computeCrossGroupRankings(groups: Group[], format: MatchFormat): TeamStats[] {
-  const all = groups.flatMap(g => computeStandings(g, format));
+  const all = groups.flatMap(g => {
+    if (g.standings && g.standings.length > 0) {
+      const teamMap = Object.fromEntries(g.teams.map(t => [t.id, t]));
+      return g.standings.map(s => ({
+        team: teamMap[s.teamId] ?? { id: s.teamId, name: s.teamId, type: 'singles' as const, players: [] },
+        ...s,
+      }));
+    }
+    return computeStandings(g, format);
+  });
   all.sort((a, b) => {
     if (format === 'sets') {
       if (b.matchWins !== a.matchWins) return b.matchWins - a.matchWins;
@@ -255,66 +264,6 @@ export function computePlayerStats(
   return stats;
 }
 
-
-type CombinedEntry = {
-  name: string;
-  rating: number;
-  prevRating?: number;
-  uncertainty: number;
-  won: number;
-  lost: number;
-  gamesPlayed: number;
-  hasSingles: boolean;
-  hasDoubles: boolean;
-};
-
-export function buildCombined(ratings: PlayerRatingEntry[], algo: string): CombinedEntry[] {
-  const map = new Map<string, CombinedEntry>();
-  for (const r of ratings.filter(r => r.algo === algo)) {
-    const cur = map.get(r.name);
-    if (!cur) {
-      map.set(r.name, {
-        name: r.name,
-        rating: r.rating,
-        prevRating: r.prevRating,
-        uncertainty: r.uncertainty,
-        won: r.won,
-        lost: r.lost,
-        gamesPlayed: r.gamesPlayed,
-        hasSingles: r.type === 'singles',
-        hasDoubles: r.type === 'doubles',
-      });
-    } else {
-      const totalGames = cur.gamesPlayed + r.gamesPlayed;
-      const weightedRating = totalGames > 0
-        ? (cur.rating * cur.gamesPlayed + r.rating * r.gamesPlayed) / totalGames
-        : (cur.rating + r.rating) / 2;
-      const weightedUncertainty = totalGames > 0
-        ? (cur.uncertainty * cur.gamesPlayed + r.uncertainty * r.gamesPlayed) / totalGames
-        : (cur.uncertainty + r.uncertainty) / 2;
-      const prevR = cur.prevRating !== undefined && r.prevRating !== undefined
-        ? totalGames > 0
-          ? (cur.prevRating * cur.gamesPlayed + r.prevRating * r.gamesPlayed) / totalGames
-          : (cur.prevRating + r.prevRating) / 2
-        : (cur.prevRating ?? r.prevRating);
-      map.set(r.name, {
-        name: r.name,
-        rating: weightedRating,
-        prevRating: prevR,
-        uncertainty: weightedUncertainty,
-        won: cur.won + r.won,
-        lost: cur.lost + r.lost,
-        gamesPlayed: totalGames,
-        hasSingles: cur.hasSingles || r.type === 'singles',
-        hasDoubles: cur.hasDoubles || r.type === 'doubles',
-      });
-    }
-  }
-  return [...map.values()].sort((a, b) => {
-    if (b.won !== a.won) return b.won - a.won;
-    return b.rating - a.rating;
-  });
-}
 
 export function winProbability(
   team1Players: string[],
