@@ -135,13 +135,13 @@ export interface PlayerStats {
   tournamentPerf: { id: string; name: string; date?: string; gameWins: number; gameLosses: number }[];
 }
 
-export async function fetchPlayerStats(name: string): Promise<PlayerStats> {
-  const res = await fetch(`${BACKEND_URL}/players/${encodeURIComponent(name)}/stats`);
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    throw new Error(`Backend error ${res.status}: ${text}`);
-  }
-  return res.json();
+export function subscribePlayerStats(
+  name: string,
+  callback: (stats: PlayerStats | null) => void,
+): () => void {
+  return onSnapshot(doc(db, 'player_stats', name), snap => {
+    callback(snap.exists() ? (snap.data() as PlayerStats) : null);
+  });
 }
 
 export async function renamePlayer(oldName: string, newName: string, token: string): Promise<void> {

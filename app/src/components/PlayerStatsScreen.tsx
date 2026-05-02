@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchPlayerStats, type PlayerStats } from '../store';
+import { subscribePlayerStats, type PlayerStats } from '../store';
 import type { PlayerRatingEntry } from '../types';
 import type { RatingAlgo } from '../store';
 
@@ -81,9 +81,10 @@ export default function PlayerStatsScreen({ playerName, ratings, algo, onBack }:
   useEffect(() => {
     setLoading(true);
     setError(null);
-    fetchPlayerStats(playerName)
-      .then(s => { setStats(s); setLoading(false); })
-      .catch(e => { setError(e instanceof Error ? e.message : 'Failed to load stats'); setLoading(false); });
+    return subscribePlayerStats(playerName, s => {
+      setStats(s);
+      setLoading(false);
+    });
   }, [playerName]);
 
   const playerRatings = ratings.filter(r => r.name === playerName && r.algo === algo && r.type !== 'combined');
@@ -107,7 +108,15 @@ export default function PlayerStatsScreen({ playerName, ratings, algo, onBack }:
         {loading && (
           <div className="text-center py-12 text-gray-400">
             <div className="text-4xl mb-2">⏳</div>
-            <p>Loading stats…</p>
+            <p>Loading…</p>
+          </div>
+        )}
+
+        {!loading && !stats && (
+          <div className="text-center py-12 text-gray-400">
+            <div className="text-4xl mb-2">🏓</div>
+            <p>No stats yet</p>
+            <p className="text-xs mt-1">Admin needs to hit Recompute once</p>
           </div>
         )}
 

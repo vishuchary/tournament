@@ -254,6 +254,11 @@ def recompute_ratings():
 
         batch.commit()
 
+        # Refresh player stats for all players seen in any game
+        from .players import save_player_stats
+        all_names = list({name for g in games for name in g.team1 + g.team2})
+        save_player_stats(all_names, db)
+
         return {'status': 'ok', 'tournament_games': len(tournament_games), 'competitive_games': len(competitive_games)}
     except Exception as e:
         import traceback

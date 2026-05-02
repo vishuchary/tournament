@@ -3,6 +3,7 @@ from typing import Optional
 from ..services.firestore_client import get_firestore
 from ..models.tournament import Tournament, StandingEntry
 from ..middleware.auth import verify_token
+from .players import save_player_stats
 
 router = APIRouter(prefix='/tournaments', tags=['tournaments'])
 
@@ -152,6 +153,15 @@ def save_tournament(body: dict):
         batch.set(db.collection('tournaments').document(t.id), t.model_dump())
         batch.set(db.collection('tournament_summaries').document(t.id), summary)
         batch.commit()
+        affected = list({
+            name
+            for level in t.levels
+            for group in level.groups
+            for team in group.teams
+            for name in team.players
+            if name
+        })
+        save_player_stats(affected, db)
         return {'status': 'ok', 'id': t.id}
     except Exception as e:
         import traceback
@@ -161,10 +171,26 @@ def save_tournament(body: dict):
 @router.delete('/{tournament_id}', dependencies=[Depends(verify_token)])
 def delete_tournament(tournament_id: str):
     db = get_firestore()
+    affected: set[str] = set()
+    doc = db.collection('tournaments').document(tournament_id).get()
+    if doc.exists:
+        try:
+            t = Tournament(**_normalize_tournament_dict(doc.to_dict()))
+            affected = {
+                name
+                for level in t.levels
+                for group in level.groups
+                for team in group.teams
+                for name in team.players
+                if name
+            }
+        except Exception:
+            pass
     batch = db.batch()
     batch.delete(db.collection('tournaments').document(tournament_id))
     batch.delete(db.collection('tournament_summaries').document(tournament_id))
     batch.commit()
+    save_player_stats(list(affected), db)
     return {'status': 'ok'}
 
 
