@@ -1,4 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
+import { EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { auth } from '../firebase';
 import type { PlayerRatingEntry, CompetitiveMatch } from '../types';
 import type { RatingAlgo } from '../store';
 import { computeStreaks, type PlayerStreak } from '../rankings';
@@ -223,11 +225,69 @@ interface Props {
   onPlayerClick?: (name: string) => void;
 }
 
+function AlgoConfirmModal({ targetAlgo, onConfirm, onCancel }: {
+  targetAlgo: RatingAlgo;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const label = targetAlgo === 'rc' ? 'Ratings Central' : 'Glicko-2';
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const user = auth.currentUser;
+    if (!user?.email) { setError('Not authenticated'); return; }
+    setLoading(true);
+    setError(null);
+    try {
+      await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
+      onConfirm();
+    } catch {
+      setError('Wrong password');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+        <h2 className="text-base font-bold text-gray-900 mb-1">Switch to {label}?</h2>
+        <p className="text-sm text-gray-500 mb-4">Enter your admin password to confirm.</p>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <input
+            autoFocus
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-400"
+          />
+          {error && <p className="text-xs text-red-500">{error}</p>}
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onCancel}
+              className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+              Cancel
+            </button>
+            <button type="submit" disabled={loading || !password}
+              className="flex-1 py-2 rounded-xl bg-gray-900 text-white text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-40">
+              {loading ? 'Checking…' : 'Confirm'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function RatingsScreen({ ratings, competitiveMatches, algo, topRankers, isAdmin, onBack, onAlgoChange, onTopRankersChange, onRecompute, onPlayerClick }: Props) {
   const streaks = useMemo(() => computeStreaks(competitiveMatches), [competitiveMatches]);
   const [tab, setTab] = useState<'singles' | 'doubles' | 'combined'>('combined');
   const [recomputing, setRecomputing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingAlgo, setPendingAlgo] = useState<RatingAlgo | null>(null);
 
   useEffect(() => {
     if (isAdmin && ratings.length === 0) {
@@ -270,15 +330,23 @@ export default function RatingsScreen({ ratings, competitiveMatches, algo, topRa
           <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2.5 rounded-xl break-all">{error}</div>
         )}
 
+        {pendingAlgo && (
+          <AlgoConfirmModal
+            targetAlgo={pendingAlgo}
+            onConfirm={() => { onAlgoChange(pendingAlgo); setPendingAlgo(null); }}
+            onCancel={() => setPendingAlgo(null)}
+          />
+        )}
+
         {/* Algo toggle + top rankers — admin only */}
         {isAdmin ? (
           <div className="space-y-2 mb-4">
             <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
-              <button onClick={() => onAlgoChange('rc')}
+              <button onClick={() => algo !== 'rc' && setPendingAlgo('rc')}
                 className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${algo === 'rc' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                 Ratings Central
               </button>
-              <button onClick={() => onAlgoChange('glicko2')}
+              <button onClick={() => algo !== 'glicko2' && setPendingAlgo('glicko2')}
                 className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${algo === 'glicko2' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                 Glicko-2
               </button>
