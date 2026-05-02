@@ -304,9 +304,10 @@ export function winProbability(
   matchType: 'singles' | 'doubles',
   algo: string,
 ): { p1: number; p2: number } | null {
-  const ratingMap = new Map(
-    ratings.filter(r => r.type === matchType && r.algo === algo).map(r => [r.name, r.rating])
-  );
+  const algoRatings = ratings.filter(r => r.algo === algo);
+  const byType = algoRatings.filter(r => r.type === matchType);
+  const source = byType.length > 0 ? byType : algoRatings;
+  const ratingMap = new Map(source.map(r => [r.name, r.rating]));
   const avg = (players: string[]) => {
     const vals = players.map(p => ratingMap.get(p)).filter((v): v is number => v !== undefined);
     return vals.length === players.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
