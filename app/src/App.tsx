@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { auth } from './firebase';
 import type { Tournament, TournamentSummary, Player, PlayerRatingEntry, CompetitiveMatch } from './types';
@@ -91,7 +91,6 @@ export default function App() {
   const [view, setView] = useState<View>({ type: 'home' });
   const [user, setUser] = useState<User | null>(null);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
-  const hasAutoNavigated = useRef(false);
 
   const isAdmin = !!user;
 
@@ -116,11 +115,6 @@ export default function App() {
     return subscribeTournamentSummaries(list => {
       setSummaries(list);
       setSummariesLoaded(true);
-      if (!hasAutoNavigated.current && list.length > 0) {
-        hasAutoNavigated.current = true;
-        const inProgress = list.find(s => s.status === 'in-progress');
-        if (inProgress) setView({ type: 'tournament', id: inProgress.id });
-      }
     });
   }, []);
 
