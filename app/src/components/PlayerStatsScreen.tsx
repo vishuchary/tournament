@@ -124,7 +124,7 @@ export default function PlayerStatsScreen({ playerName, tournaments, competitive
           )}
 
           {/* Performance chart */}
-          {stats.tournamentPerf.length > 1 && (
+          {stats.tournamentPerf.length > 0 && (
             <div>
               <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Win Rate by Tournament</h3>
               <div className="bg-white rounded-xl border border-gray-200 px-4 py-4">

@@ -192,44 +192,48 @@ export default function GroupView({ group, allGroups, format, setCount, players 
                 }`}
                 onClick={() => setEditMatch(match)}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4 flex-1">
-                    <span className="font-medium text-gray-900 flex-1 text-right">{t1 ? teamDisplayName(t1) : ''}</span>
-                    {match.completed ? (
-                      <div className="text-center min-w-[100px]">
-                        <div className="text-sm font-mono text-gray-700">
-                          {match.games.map((g, i) => (
-                            <span key={i} className="mx-1">{g.team1Score}-{g.team2Score}</span>
-                          ))}
-                        </div>
+                {(() => {
+                  const pred = matchType && ratings.length > 0
+                    ? winProbability(t1?.players ?? [], t2?.players ?? [], ratings, matchType, algo)
+                    : null;
+                  const predBar = pred ? (
+                    <div className="flex flex-col items-center min-w-[100px] gap-1">
+                      <div className="flex w-full h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-blue-400 h-full" style={{ width: `${pred.p1 * 100}%` }} />
+                        <div className="bg-orange-300 h-full flex-1" />
                       </div>
-                    ) : (() => {
-                      const pred = matchType && ratings.length > 0
-                        ? winProbability(t1?.players ?? [], t2?.players ?? [], ratings, matchType, algo)
-                        : null;
-                      return pred ? (
-                        <div className="flex flex-col items-center min-w-[100px] gap-1">
-                          <div className="flex w-full h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-blue-400 h-full" style={{ width: `${pred.p1 * 100}%` }} />
-                            <div className="bg-orange-300 h-full flex-1" />
+                      <span className="text-xs text-gray-400 tabular-nums">
+                        {Math.round(pred.p1 * 100)}% · {Math.round(pred.p2 * 100)}%
+                      </span>
+                    </div>
+                  ) : null;
+                  return (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4 flex-1">
+                        <span className="font-medium text-gray-900 flex-1 text-right">{t1 ? teamDisplayName(t1) : ''}</span>
+                        {match.completed ? (
+                          <div className="flex flex-col items-center min-w-[100px] gap-1">
+                            <div className="text-sm font-mono text-gray-700">
+                              {match.games.map((g, i) => (
+                                <span key={i} className="mx-1">{g.team1Score}-{g.team2Score}</span>
+                              ))}
+                            </div>
+                            {predBar}
                           </div>
-                          <span className="text-xs text-gray-400 tabular-nums">
-                            {Math.round(pred.p1 * 100)}% · {Math.round(pred.p2 * 100)}%
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-gray-300 text-xl font-light min-w-[100px] text-center">vs</span>
-                      );
-                    })()}
-                    <span className="font-medium text-gray-900 flex-1">{t2 ? teamDisplayName(t2) : ''}</span>
-                  </div>
-                  <div className="ml-4">
-                    {match.completed
-                      ? <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">Done</span>
-                      : <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-full">Pending</span>
-                    }
-                  </div>
-                </div>
+                        ) : (
+                          predBar ?? <span className="text-gray-300 text-xl font-light min-w-[100px] text-center">vs</span>
+                        )}
+                        <span className="font-medium text-gray-900 flex-1">{t2 ? teamDisplayName(t2) : ''}</span>
+                      </div>
+                      <div className="ml-4">
+                        {match.completed
+                          ? <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">Done</span>
+                          : <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-full">Pending</span>
+                        }
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
