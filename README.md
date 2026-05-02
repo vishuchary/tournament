@@ -3,7 +3,7 @@
 A real-time table tennis tournament scoring PWA for Mountain House TT Club. Players view live scores from any device. Admins create and manage tournaments via Firebase Authentication.
 
 **Live app:** https://app-henna-three-21.vercel.app  
-**Repo:** https://github.com/mhttclub/tournament (private)
+**Repo:** https://github.com/vishuchary/tt-tournament
 
 ---
 
