@@ -153,32 +153,6 @@ export default function PlayerStatsScreen({ playerName, tournaments, competitive
             </div>
           )}
 
-          {/* Head-to-head */}
-          {stats.headToHead.length > 0 && (
-            <div>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Head-to-Head</h3>
-              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                {stats.headToHead.map((h, i) => {
-                  const total = h.gameWins + h.gameLosses;
-                  const rate = total > 0 ? h.gameWins / total : 0;
-                  return (
-                    <div key={h.opponent} className={`px-4 py-3 flex items-center gap-3 ${i > 0 ? 'border-t border-gray-100' : ''}`}>
-                      <span className="text-sm text-gray-900 flex-1 font-medium">{h.opponent}</span>
-                      <div className="flex items-center gap-2">
-                        <div className="w-20 h-1.5 rounded-full bg-gray-100 overflow-hidden">
-                          <div className="h-full rounded-full bg-blue-400" style={{ width: `${rate * 100}%` }} />
-                        </div>
-                        <span className="text-xs tabular-nums text-gray-500 w-14 text-right">
-                          {h.gameWins}W · {h.gameLosses}L
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
           {/* Tournament history */}
           {stats.tournaments.length > 0 && (
             <div>
