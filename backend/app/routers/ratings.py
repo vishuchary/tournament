@@ -205,6 +205,7 @@ def recompute_ratings():
                     batch.set(ref, data)
 
         # Compute and save combined ratings per player per algo
+        history_entries: list[tuple[str, str, float]] = []  # (name, algo, rating)
         for algo in ('rc', 'glicko2'):
             singles = {r.name: r for r in all_computed.get(f'singles_{algo}', [])}
             doubles = {r.name: r for r in all_computed.get(f'doubles_{algo}', [])}
@@ -251,8 +252,29 @@ def recompute_ratings():
                                 'prevRating': prev_ratings.get(prev_key)}
                 key = _sanitize(name) + f'_combined_{algo}'
                 batch.set(db.collection('ratings').document(key), combined)
+                history_entries.append((name, algo, combined['rating']))
 
         batch.commit()
+
+        # Save rating history snapshots (one doc per player+algo, map of date→rating)
+        import datetime
+        today = datetime.date.today().isoformat()
+        hist_docs = {}
+        for name, algo, _ in history_entries:
+            hist_key = _sanitize(name) + f'_{algo}'
+            if hist_key not in hist_docs:
+                hist_docs[hist_key] = db.collection('rating_history').document(hist_key).get()
+        hist_batch = db.batch()
+        for name, algo, rating in history_entries:
+            hist_key = _sanitize(name) + f'_{algo}'
+            existing = hist_docs[hist_key]
+            snapshots = existing.to_dict().get('snapshots', {}) if existing.exists else {}
+            snapshots[today] = round(rating, 4)
+            hist_batch.set(
+                db.collection('rating_history').document(hist_key),
+                {'name': name, 'algo': algo, 'snapshots': snapshots},
+            )
+        hist_batch.commit()
 
         # Refresh player stats for all players seen in any game
         from .players import save_player_stats

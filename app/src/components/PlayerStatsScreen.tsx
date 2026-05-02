@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { subscribePlayerStats, type PlayerStats } from '../store';
+import { subscribePlayerStats, fetchRatingHistory, type PlayerStats } from '../store';
 import type { PlayerRatingEntry } from '../types';
 import type { RatingAlgo } from '../store';
 
@@ -73,10 +73,42 @@ function BucketSection({ label, b }: { label: string; b: PlayerStats['overall'] 
   );
 }
 
+function RatingHistoryChart({ history, algo }: { history: { date: string; rating: number }[]; algo: RatingAlgo }) {
+  if (history.length < 2) return null;
+  const W = 400, H = 72, PAD = { t: 6, r: 8, b: 18, l: 8 };
+  const cW = W - PAD.l - PAD.r;
+  const cH = H - PAD.t - PAD.b;
+  const ratings = history.map(h => h.rating);
+  const minR = Math.min(...ratings);
+  const maxR = Math.max(...ratings);
+  const range = maxR - minR || 1;
+  const pts = history.map((h, i) => ({
+    x: PAD.l + (i / (history.length - 1)) * cW,
+    y: PAD.t + (1 - (h.rating - minR) / range) * cH,
+    ...h,
+  }));
+  const polyline = pts.map(p => `${p.x},${p.y}`).join(' ');
+  const last = pts[pts.length - 1];
+  const ratingLabel = algo === 'rc' ? last.rating.toFixed(1) : Math.round(last.rating).toString();
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
+      <polyline points={polyline} fill="none" stroke="#93c5fd" strokeWidth="1.5" />
+      {pts.map((p, i) => (
+        <circle key={i} cx={p.x} cy={p.y} r={i === pts.length - 1 ? 4 : 2.5}
+          fill={i === pts.length - 1 ? '#3b82f6' : '#bfdbfe'} />
+      ))}
+      <text x={pts[0].x} y={H - 2} fontSize="9" fill="#9ca3af" textAnchor="start">{pts[0].date.slice(5)}</text>
+      <text x={last.x} y={last.y - 8} fontSize="10" fill="#3b82f6" textAnchor="middle" fontWeight="600">{ratingLabel}</text>
+      <text x={last.x} y={H - 2} fontSize="9" fill="#9ca3af" textAnchor="end">{last.date.slice(5)}</text>
+    </svg>
+  );
+}
+
 export default function PlayerStatsScreen({ playerName, ratings, algo, onBack }: Props) {
   const [stats, setStats] = useState<PlayerStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [ratingHistory, setRatingHistory] = useState<{ date: string; rating: number }[]>([]);
 
   useEffect(() => {
     setLoading(true);
@@ -86,6 +118,10 @@ export default function PlayerStatsScreen({ playerName, ratings, algo, onBack }:
       setLoading(false);
     });
   }, [playerName]);
+
+  useEffect(() => {
+    fetchRatingHistory(playerName, algo).then(setRatingHistory).catch(() => setRatingHistory([]));
+  }, [playerName, algo]);
 
   const playerRatings = ratings.filter(r => r.name === playerName && r.algo === algo && r.type !== 'combined');
   const singlesRating = playerRatings.find(r => r.type === 'singles');
@@ -136,6 +172,12 @@ export default function PlayerStatsScreen({ playerName, ratings, algo, onBack }:
                   {singlesRating && <RatingCard entry={singlesRating} algo={algo} />}
                   {doublesRating && <RatingCard entry={doublesRating} algo={algo} />}
                 </div>
+                {ratingHistory.length >= 2 && (
+                  <div className="mt-3 bg-white rounded-xl border border-gray-200 px-4 pt-3 pb-1">
+                    <p className="text-xs text-gray-400 mb-1">Rating history · combined</p>
+                    <RatingHistoryChart history={ratingHistory} algo={algo} />
+                  </div>
+                )}
               </div>
             )}
 

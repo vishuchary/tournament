@@ -1,6 +1,6 @@
 import {
   collection, doc, setDoc, deleteDoc,
-  onSnapshot, query, orderBy, getDocs,
+  onSnapshot, query, orderBy, getDocs, getDoc,
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import type { Tournament, TournamentSummary, TournamentLevel, Group, Match, Player, PlayerRatingEntry, CompetitiveMatch } from './types';
@@ -133,6 +133,19 @@ export interface PlayerStats {
   doubles: PlayerStatsBucket;
   tournaments: { id: string; name: string; date?: string; matchType?: string; result: 'winner' | 'runner-up' | null }[];
   tournamentPerf: { id: string; name: string; date?: string; gameWins: number; gameLosses: number }[];
+}
+
+export async function fetchRatingHistory(
+  name: string,
+  algo: RatingAlgo,
+): Promise<{ date: string; rating: number }[]> {
+  const sanitized = name.replace(/[.#$[\]/]/g, '_');
+  const snap = await getDoc(doc(db, 'rating_history', `${sanitized}_${algo}`));
+  if (!snap.exists()) return [];
+  const snapshots = (snap.data().snapshots ?? {}) as Record<string, number>;
+  return Object.entries(snapshots)
+    .map(([date, rating]) => ({ date, rating }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export function subscribePlayerStats(
