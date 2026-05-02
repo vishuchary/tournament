@@ -129,20 +129,24 @@ export default function App() {
     });
   }, [summariesLoaded, isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Other subscriptions
+  // Home screen subscriptions — players + competitive matches (counts shown on home)
   useEffect(() => {
     const unsubPlayers = subscribePlayers(setPlayers);
     const unsubCompetitive = subscribeCompetitiveMatches(setCompetitiveMatches);
-    const unsubRatings = subscribeBaselineRatings(setBaselineRatings);
-    const unsubAlgo = subscribeAlgoSetting(setAlgo);
-    const unsubTopRankers = subscribeTopRankers(setTopRankers);
-    return () => {
-      unsubPlayers();
-      unsubCompetitive();
-      unsubRatings();
-      unsubAlgo();
-      unsubTopRankers();
-    };
+    return () => { unsubPlayers(); unsubCompetitive(); };
+  }, []);
+
+  // Deferred subscriptions — not needed until user navigates off home screen
+  useEffect(() => {
+    let unsubs: (() => void)[] = [];
+    const id = setTimeout(() => {
+      unsubs = [
+        subscribeBaselineRatings(setBaselineRatings),
+        subscribeAlgoSetting(setAlgo),
+        subscribeTopRankers(setTopRankers),
+      ];
+    }, 1500);
+    return () => { clearTimeout(id); unsubs.forEach(u => u()); };
   }, []);
 
   // Single-tournament subscription — active only while in tournament view
