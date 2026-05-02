@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { auth } from './firebase';
 import type { Tournament, TournamentSummary, Player, PlayerRatingEntry, CompetitiveMatch } from './types';
@@ -12,14 +12,15 @@ import {
   subscribeCompetitiveMatches,
   type RatingAlgo,
 } from './store';
-import TournamentSetup from './components/TournamentSetup';
-import TournamentView from './components/TournamentView';
-import PlayersScreen from './components/PlayersScreen';
-import PlayerStatsScreen from './components/PlayerStatsScreen';
-import RatingsScreen from './components/RatingsScreen';
-import CompetitiveGamesScreen from './components/CompetitiveGamesScreen';
-import AdminLogin from './components/AdminLogin';
 import './index.css';
+
+const TournamentSetup = lazy(() => import('./components/TournamentSetup'));
+const TournamentView = lazy(() => import('./components/TournamentView'));
+const PlayersScreen = lazy(() => import('./components/PlayersScreen'));
+const PlayerStatsScreen = lazy(() => import('./components/PlayerStatsScreen'));
+const RatingsScreen = lazy(() => import('./components/RatingsScreen'));
+const CompetitiveGamesScreen = lazy(() => import('./components/CompetitiveGamesScreen'));
+const AdminLogin = lazy(() => import('./components/AdminLogin'));
 
 type NavView = { type: 'home' } | { type: 'tournament'; id: string } | { type: 'competitive' } | { type: 'players' } | { type: 'ratings' };
 
@@ -195,73 +196,81 @@ export default function App() {
 
   if (view.type === 'new') {
     return (
-      <TournamentSetup
+      <Suspense fallback={null}><TournamentSetup
         seq={summaries.length + 1}
         players={players}
         onCreate={handleCreate}
         onCancel={() => setView({ type: 'home' })}
-      />
+      /></Suspense>
     );
   }
 
   if (view.type === 'players') {
     return (
-      <PlayersScreen
-        players={players}
-        isAdmin={isAdmin}
-        topPlayerNames={topPlayerNames}
-        ratings={baselineRatings}
-        algo={algo}
-        onBack={() => setView({ type: 'home' })}
-        getToken={getToken}
-        onPlayerClick={name => {
-          setView({ type: 'playerStats', name, back: { type: 'players' } });
-        }}
-      />
+      <Suspense fallback={null}>
+        <PlayersScreen
+          players={players}
+          isAdmin={isAdmin}
+          topPlayerNames={topPlayerNames}
+          ratings={baselineRatings}
+          algo={algo}
+          onBack={() => setView({ type: 'home' })}
+          getToken={getToken}
+          onPlayerClick={name => {
+            setView({ type: 'playerStats', name, back: { type: 'players' } });
+          }}
+        />
+      </Suspense>
     );
   }
 
   if (view.type === 'playerStats') {
     return (
-      <PlayerStatsScreen
-        playerName={view.name}
-        ratings={baselineRatings}
-        algo={algo}
-        onBack={() => setView(view.back)}
-      />
+      <Suspense fallback={null}>
+        <PlayerStatsScreen
+          playerName={view.name}
+          ratings={baselineRatings}
+          algo={algo}
+          onBack={() => setView(view.back)}
+        />
+      </Suspense>
     );
   }
 
   if (view.type === 'competitive') {
     return (
-      <CompetitiveGamesScreen
-        matches={competitiveMatches}
-        players={players}
-        isAdmin={isAdmin}
-        ratings={baselineRatings}
-        algo={algo}
-        onBack={() => setView({ type: 'home' })}
-        onDataChange={handleRecompute}
-      />
+      <Suspense fallback={null}>
+        <CompetitiveGamesScreen
+          matches={competitiveMatches}
+          players={players}
+          isAdmin={isAdmin}
+          ratings={baselineRatings}
+          algo={algo}
+          onBack={() => setView({ type: 'home' })}
+          onDataChange={handleRecompute}
+        />
+      </Suspense>
     );
   }
 
   if (view.type === 'ratings') {
     return (
-      <RatingsScreen
-        ratings={baselineRatings}
-        competitiveMatches={competitiveMatches}
-        algo={algo}
-        topRankers={topRankers}
-        isAdmin={isAdmin}
-        onBack={() => setView({ type: 'home' })}
-        onAlgoChange={handleAlgoChange}
-        onTopRankersChange={handleTopRankersChange}
-        onRecompute={handleRecompute}
-        onPlayerClick={name => {
-          setView({ type: 'playerStats', name, back: { type: 'ratings' } });
-        }}
-      />
+      <Suspense fallback={null}>
+        <RatingsScreen
+          ratings={baselineRatings}
+          competitiveMatches={competitiveMatches}
+          algo={algo}
+          topRankers={topRankers}
+          isAdmin={isAdmin}
+          onBack={() => setView({ type: 'home' })}
+          onAlgoChange={handleAlgoChange}
+          onTopRankersChange={handleTopRankersChange}
+          onRecompute={handleRecompute}
+          onPlayerClick={name => {
+            setView({ type: 'playerStats', name, back: { type: 'ratings' } });
+          }}
+        />
+      </Suspense>
     );
   }
 
@@ -269,20 +278,22 @@ export default function App() {
     if (!currentTournament) return null;
     const t = currentTournament;
     return (
-      <TournamentView
-        tournament={t}
-        players={players}
-        isAdmin={isAdmin}
-        ratings={baselineRatings}
-        algo={algo}
-        onUpdate={handleUpdate}
-        onDelete={() => handleDelete(t.id)}
-        onBack={() => setView({ type: 'home' })}
-        onRequestAdmin={() => setShowAdminLogin(true)}
-        onPlayerClick={name => {
-          setView({ type: 'playerStats', name, back: { type: 'tournament', id: t.id } });
-        }}
-      />
+      <Suspense fallback={null}>
+        <TournamentView
+          tournament={t}
+          players={players}
+          isAdmin={isAdmin}
+          ratings={baselineRatings}
+          algo={algo}
+          onUpdate={handleUpdate}
+          onDelete={() => handleDelete(t.id)}
+          onBack={() => setView({ type: 'home' })}
+          onRequestAdmin={() => setShowAdminLogin(true)}
+          onPlayerClick={name => {
+            setView({ type: 'playerStats', name, back: { type: 'tournament', id: t.id } });
+          }}
+        />
+      </Suspense>
     );
   }
 
@@ -292,19 +303,24 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-50">
       {showAdminLogin && (
-        <AdminLogin
-          onSuccess={() => setShowAdminLogin(false)}
-          onCancel={() => setShowAdminLogin(false)}
-        />
+        <Suspense fallback={null}>
+          <AdminLogin
+            onSuccess={() => setShowAdminLogin(false)}
+            onCancel={() => setShowAdminLogin(false)}
+          />
+        </Suspense>
       )}
 
       {/* Banner */}
       <div className="relative w-full h-48 sm:h-64 overflow-hidden">
-        <img
-          src="/banner.jpg"
-          alt="Mountain House TT Club"
-          className="w-full h-full object-cover object-center"
-        />
+        <picture>
+          <source srcSet="/banner.webp" type="image/webp" />
+          <img
+            src="/banner.jpg"
+            alt="Mountain House TT Club"
+            className="w-full h-full object-cover object-center"
+          />
+        </picture>
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
         <div className="absolute bottom-0 left-0 right-0 p-5 flex items-end justify-between">
           <h1 className="text-2xl sm:text-3xl font-bold text-white drop-shadow">🏓 Mountain House TT Club</h1>
