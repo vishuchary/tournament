@@ -12,10 +12,10 @@ import {
   subscribeCompetitiveMatches,
   type RatingAlgo,
 } from './store';
+import TournamentView from './components/TournamentView';
 import './index.css';
 
 const TournamentSetup = lazy(() => import('./components/TournamentSetup'));
-const TournamentView = lazy(() => import('./components/TournamentView'));
 const PlayersScreen = lazy(() => import('./components/PlayersScreen'));
 const PlayerStatsScreen = lazy(() => import('./components/PlayerStatsScreen'));
 const RatingsScreen = lazy(() => import('./components/RatingsScreen'));
@@ -278,22 +278,20 @@ export default function App() {
     if (!currentTournament) return null;
     const t = currentTournament;
     return (
-      <Suspense fallback={null}>
-        <TournamentView
-          tournament={t}
-          players={players}
-          isAdmin={isAdmin}
-          ratings={baselineRatings}
-          algo={algo}
-          onUpdate={handleUpdate}
-          onDelete={() => handleDelete(t.id)}
-          onBack={() => setView({ type: 'home' })}
-          onRequestAdmin={() => setShowAdminLogin(true)}
-          onPlayerClick={name => {
-            setView({ type: 'playerStats', name, back: { type: 'tournament', id: t.id } });
-          }}
-        />
-      </Suspense>
+      <TournamentView
+        tournament={t}
+        players={players}
+        isAdmin={isAdmin}
+        ratings={baselineRatings}
+        algo={algo}
+        onUpdate={handleUpdate}
+        onDelete={() => handleDelete(t.id)}
+        onBack={() => setView({ type: 'home' })}
+        onRequestAdmin={() => setShowAdminLogin(true)}
+        onPlayerClick={name => {
+          setView({ type: 'playerStats', name, back: { type: 'tournament', id: t.id } });
+        }}
+      />
     );
   }
 
