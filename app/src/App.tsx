@@ -4,7 +4,7 @@ import { auth } from './firebase';
 import type { Tournament, TournamentSummary, Player, PlayerRatingEntry, CompetitiveMatch } from './types';
 import {
   subscribeTournamentSummaries, subscribeTournament, fetchTournaments,
-  saveTournament, deleteTournament,
+  saveTournament, deleteTournament, computeTournamentSummary,
   subscribePlayers,
   subscribeBaselineRatings, subscribeAlgoSetting, saveAlgoSetting,
   subscribeTopRankers, saveTopRankers,
@@ -122,13 +122,16 @@ export default function App() {
     });
   }, []);
 
-  // One-time migration: if summaries are empty but full tournaments exist, create summaries
+  // Fallback: if tournament_summaries is empty, fetch full tournaments and show them.
+  // If admin, also write summaries to Firestore for future loads.
   useEffect(() => {
     if (!summariesLoaded || summaries.length > 0) return;
     fetchTournaments().then(list => {
-      list.forEach(t => saveTournament(t)); // saveTournament writes summary too
+      if (list.length === 0) return;
+      setSummaries(list.map(computeTournamentSummary));
+      if (isAdmin) list.forEach(t => saveTournament(t));
     });
-  }, [summariesLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [summariesLoaded, isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Other subscriptions
   useEffect(() => {
