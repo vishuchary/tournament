@@ -28,11 +28,27 @@ export interface Match {
   completed: boolean;
 }
 
+export interface StandingEntry {
+  teamId: string;
+  matchesPlayed: number;
+  matchWins: number;
+  matchLosses: number;
+  setWins: number;
+  setLosses: number;
+  gameWins: number;
+  gameLosses: number;
+  pointsFor: number;
+  pointsAgainst: number;
+  pointDiff: number;
+  rank: number;
+}
+
 export interface Group {
   id: string;
   name: string;
   teams: Team[];
   matches: Match[];
+  standings?: StandingEntry[];
 }
 
 export interface TournamentLevel {

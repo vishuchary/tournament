@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Group, Match, MatchFormat, Team, Player, PlayerRatingEntry } from '../types';
+import type { Group, Match, MatchFormat, Team, Player, PlayerRatingEntry, TeamStats } from '../types';
 import { computeStandings, teamDisplayName, winProbability } from '../rankings';
 import MatchEntry from './MatchEntry';
 import PlayerPicker from './PlayerPicker';
@@ -72,8 +72,13 @@ export default function GroupView({ group, allGroups, format, setCount, players 
   const [editMatch, setEditMatch] = useState<Match | null>(null);
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null);
 
-  const standings = computeStandings(group, format);
   const teamMap = Object.fromEntries(group.teams.map(t => [t.id, t]));
+  const standings: TeamStats[] = group.standings
+    ? group.standings.map(s => ({
+        team: teamMap[s.teamId] ?? { id: s.teamId, name: s.teamId, type: 'singles' as const, players: [] },
+        ...s,
+      }))
+    : computeStandings(group, format);
 
   function handleMatchSave(match: Match) {
     onUpdate({

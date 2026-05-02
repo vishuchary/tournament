@@ -2,7 +2,7 @@ import {
   collection, doc, setDoc, deleteDoc,
   onSnapshot, query, orderBy, getDocs,
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import type { Tournament, TournamentSummary, TournamentLevel, Group, Match, Player, PlayerRatingEntry, CompetitiveMatch } from './types';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'https://backend-five-gules-97.vercel.app';
@@ -53,6 +53,41 @@ function normalizeTournament(raw: any): Tournament {
       groups: toArray<Group>(level.groups).map(normalizeGroup),
     })),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Backend API helpers
+// ---------------------------------------------------------------------------
+
+async function getAuthToken(): Promise<string> {
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error('Not authenticated');
+  return token;
+}
+
+async function backendPost(path: string, body: unknown): Promise<void> {
+  const token = await getAuthToken();
+  const res = await fetch(`${BACKEND_URL}${path}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`Backend error ${res.status}: ${text}`);
+  }
+}
+
+async function backendDelete(path: string): Promise<void> {
+  const token = await getAuthToken();
+  const res = await fetch(`${BACKEND_URL}${path}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`Backend error ${res.status}: ${text}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -148,18 +183,13 @@ export async function fetchTournaments(): Promise<Tournament[]> {
 }
 
 export function saveTournament(t: Tournament): Promise<void> {
-  const summary = computeTournamentSummary(t);
-  return Promise.all([
-    setDoc(doc(db, 'tournaments', t.id), t),
-    setDoc(doc(db, 'tournament_summaries', t.id), summary),
-  ]).then(() => {}).catch(err => console.error('Firestore save failed:', err));
+  return backendPost('/tournaments/save', t)
+    .catch(err => console.error('Save tournament failed:', err));
 }
 
 export function deleteTournament(id: string): Promise<void> {
-  return Promise.all([
-    deleteDoc(doc(db, 'tournaments', id)),
-    deleteDoc(doc(db, 'tournament_summaries', id)),
-  ]).then(() => {}).catch(err => console.error('Firestore delete failed:', err));
+  return backendDelete(`/tournaments/${id}`)
+    .catch(err => console.error('Delete tournament failed:', err));
 }
 
 // ---------------------------------------------------------------------------
@@ -204,13 +234,13 @@ export function subscribeCompetitiveMatches(callback: (matches: CompetitiveMatch
 }
 
 export function saveCompetitiveMatch(m: CompetitiveMatch): Promise<void> {
-  return setDoc(doc(db, 'competitive_matches', m.id), m)
-    .catch(err => console.error('Firestore save competitive match failed:', err));
+  return backendPost('/competitive-matches/save', m)
+    .catch(err => console.error('Save competitive match failed:', err));
 }
 
 export function deleteCompetitiveMatch(id: string): Promise<void> {
-  return deleteDoc(doc(db, 'competitive_matches', id))
-    .catch(err => console.error('Firestore delete competitive match failed:', err));
+  return backendDelete(`/competitive-matches/${id}`)
+    .catch(err => console.error('Delete competitive match failed:', err));
 }
 
 // ---------------------------------------------------------------------------

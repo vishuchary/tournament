@@ -25,12 +25,28 @@ class Team(BaseModel):
     players: list[str] = []
 
 
+class StandingEntry(BaseModel):
+    teamId: str
+    matchesPlayed: int = 0
+    matchWins: int = 0
+    matchLosses: int = 0
+    setWins: int = 0
+    setLosses: int = 0
+    gameWins: int = 0
+    gameLosses: int = 0
+    pointsFor: int = 0
+    pointsAgainst: int = 0
+    pointDiff: int = 0
+    rank: int = 0
+
+
 class Group(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     id: str
     name: str
     teams: list[Team] = []
     matches: list[Match] = []
+    standings: list[StandingEntry] = []
 
 
 class TournamentLevel(BaseModel):
