@@ -441,6 +441,7 @@ export default function App() {
               )}
             </>
           )}
+        <p className="text-center text-xs text-gray-300 py-6">v{__APP_VERSION__}</p>
         </div>
       </div>
     </div>
