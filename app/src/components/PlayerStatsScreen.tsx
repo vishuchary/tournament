@@ -123,6 +123,62 @@ export default function PlayerStatsScreen({ playerName, tournaments, competitive
             </div>
           )}
 
+          {/* Performance chart */}
+          {stats.tournamentPerf.length > 1 && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Win Rate by Tournament</h3>
+              <div className="bg-white rounded-xl border border-gray-200 px-4 py-4">
+                <div className="flex items-end gap-2 h-20">
+                  {stats.tournamentPerf.map(tp => {
+                    const total = tp.gameWins + tp.gameLosses;
+                    const rate = total > 0 ? tp.gameWins / total : 0;
+                    return (
+                      <div key={tp.id} className="flex-1 flex flex-col items-center gap-1 group relative">
+                        <span className="absolute -top-5 text-xs text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                          {Math.round(rate * 100)}%
+                        </span>
+                        <div className="w-full rounded-t-sm" style={{
+                          height: `${Math.max(rate * 64, 4)}px`,
+                          background: rate >= 0.5 ? '#60a5fa' : '#fca5a5',
+                        }} />
+                        <span className="text-[10px] text-gray-400 truncate w-full text-center">
+                          {tp.name.replace(/tournament/i, '').trim().slice(0, 8)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-gray-400 mt-2 text-center">blue = above 50% · red = below 50%</p>
+              </div>
+            </div>
+          )}
+
+          {/* Head-to-head */}
+          {stats.headToHead.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Head-to-Head</h3>
+              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                {stats.headToHead.map((h, i) => {
+                  const total = h.gameWins + h.gameLosses;
+                  const rate = total > 0 ? h.gameWins / total : 0;
+                  return (
+                    <div key={h.opponent} className={`px-4 py-3 flex items-center gap-3 ${i > 0 ? 'border-t border-gray-100' : ''}`}>
+                      <span className="text-sm text-gray-900 flex-1 font-medium">{h.opponent}</span>
+                      <div className="flex items-center gap-2">
+                        <div className="w-20 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                          <div className="h-full rounded-full bg-blue-400" style={{ width: `${rate * 100}%` }} />
+                        </div>
+                        <span className="text-xs tabular-nums text-gray-500 w-14 text-right">
+                          {h.gameWins}W · {h.gameLosses}L
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Tournament history */}
           {stats.tournaments.length > 0 && (
             <div>

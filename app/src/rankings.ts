@@ -114,12 +114,28 @@ export function computeCrossGroupRankings(groups: Group[], format: MatchFormat):
   return all;
 }
 
+export interface H2HRecord {
+  opponent: string;
+  gameWins: number;
+  gameLosses: number;
+}
+
+export interface TournamentPerf {
+  id: string;
+  name: string;
+  date?: string;
+  gameWins: number;
+  gameLosses: number;
+}
+
 export interface PlayerStats {
   name: string;
   overall: { matchesPlayed: number; matchWins: number; gameWins: number; gameLosses: number; pointsFor: number; pointsAgainst: number };
   singles: { matchesPlayed: number; matchWins: number; gameWins: number; gameLosses: number; pointsFor: number; pointsAgainst: number };
   doubles: { matchesPlayed: number; matchWins: number; gameWins: number; gameLosses: number; pointsFor: number; pointsAgainst: number };
   tournaments: { id: string; name: string; date?: string; matchType?: string; result: 'winner' | 'runner-up' | null }[];
+  headToHead: H2HRecord[];
+  tournamentPerf: TournamentPerf[];
 }
 
 function blankBucket() {
@@ -157,11 +173,21 @@ export function computePlayerStats(
     singles: blankBucket(),
     doubles: blankBucket(),
     tournaments: [],
+    headToHead: [],
+    tournamentPerf: [],
   };
+  const h2hMap = new Map<string, { gameWins: number; gameLosses: number }>();
+  function addH2H(opponents: string[], gw: number, gl: number) {
+    for (const opp of opponents) {
+      const cur = h2hMap.get(opp) ?? { gameWins: 0, gameLosses: 0 };
+      h2hMap.set(opp, { gameWins: cur.gameWins + gw, gameLosses: cur.gameLosses + gl });
+    }
+  }
 
   for (const t of tournaments) {
     let appearedInTournament = false;
     let result: 'winner' | 'runner-up' | null = null;
+    let tGW = 0, tGL = 0;
 
     for (const level of t.levels) {
       for (const group of level.groups) {
@@ -174,10 +200,9 @@ export function computePlayerStats(
           if (!myTeam) continue;
           appearedInTournament = true;
           const isTeam1 = myTeam.id === match.team1Id;
-          // Use the match type from the team type field if available, else tournament default
+          const oppTeam = isTeam1 ? team2 : team1;
           const mtype = myTeam.type === 'singles' ? 'singles' : (t.matchType ?? 'doubles');
           const bucket = mtype === 'singles' ? stats.singles : stats.doubles;
-          // Determine match winner from game scores
           let gw = 0, gl = 0;
           for (const game of match.games) {
             const w = gameWinner(game.team1Score, game.team2Score);
@@ -187,9 +212,11 @@ export function computePlayerStats(
           const matchWon = gw > gl;
           bucket.matchesPlayed++; stats.overall.matchesPlayed++;
           bucket.matchWins += matchWon ? 1 : 0; stats.overall.matchWins += matchWon ? 1 : 0;
+          tGW += gw; tGL += gl;
           for (const game of match.games) {
             accumulateGame(game, isTeam1, matchWon, bucket, stats.overall);
           }
+          if (oppTeam) addH2H(oppTeam.players, gw, gl);
         }
       }
     }
@@ -224,6 +251,7 @@ export function computePlayerStats(
 
     if (appearedInTournament) {
       stats.tournaments.push({ id: t.id, name: t.name, date: t.date, matchType: t.matchType, result });
+      stats.tournamentPerf.push({ id: t.id, name: t.name, date: t.date, gameWins: tGW, gameLosses: tGL });
     }
   }
 
@@ -236,10 +264,22 @@ export function computePlayerStats(
     const matchWon = isTeam1 ? m.winner === 1 : m.winner === 2;
     bucket.matchesPlayed++; stats.overall.matchesPlayed++;
     bucket.matchWins += matchWon ? 1 : 0; stats.overall.matchWins += matchWon ? 1 : 0;
+    let cgw = 0, cgl = 0;
     for (const game of m.games) {
       accumulateGame(game, isTeam1, matchWon, bucket, stats.overall);
+      const w = gameWinner(game.team1Score, game.team2Score);
+      const iWon = isTeam1 ? w === 'team1' : w === 'team2';
+      if (iWon) cgw++; else if (w) cgl++;
     }
+    const opps = isTeam1 ? m.team2 : m.team1;
+    addH2H(opps, cgw, cgl);
   }
+
+  stats.headToHead = [...h2hMap.entries()]
+    .map(([opponent, r]) => ({ opponent, ...r }))
+    .sort((a, b) => (b.gameWins + b.gameLosses) - (a.gameWins + a.gameLosses));
+
+  stats.tournamentPerf.sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''));
 
   return stats;
 }
